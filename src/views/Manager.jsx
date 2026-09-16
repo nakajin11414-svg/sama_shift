@@ -23,7 +23,8 @@ function ApproveView({ data, days, mk }) {
   const [sel, setSel] = useState(days[0].k);
   useEffect(() => { if (!days.find((d) => d.k === sel)) setSel(days[0].k); }, [days, sel]);
 
-  const day = days.find((d) => d.k === sel);
+  // 月を切り替えた直後は前の月の日付が選ばれたままなので、その月の1日で代用する
+  const day = days.find((d) => d.k === sel) || days[0];
   const req = data.ruleFor(day);
   const c = data.counts[day.k];
   const rows = data.staff.map((s) => ({ s, r: data.requests[s.id]?.[day.k] })).filter((x) => x.r);
