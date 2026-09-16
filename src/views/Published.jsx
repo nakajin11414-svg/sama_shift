@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { WD, SLOT, NAVY, LINE, fmt, slotText, slotShort, covers, dayColor } from "../lib/util.js";
 import { Card, Tag } from "../ui.jsx";
 
 export default function PublishedView({ data, days, mk, isManager }) {
   const [preview, setPreview] = useState(false);
   const [focus, setFocus] = useState(null); // {kind:"staff", s} | {kind:"date", k}
+  useEffect(() => { setFocus(null); }, [mk]); // 月を切り替えたら選択を解除
 
   if (!data.published && !(isManager && preview)) {
     return (
@@ -89,7 +90,8 @@ export default function PublishedView({ data, days, mk, isManager }) {
                 <div className="flex items-center mb-2"><span className="font-medium">{fmt(focus.k)} の出勤者</span><button onClick={() => setFocus(null)} className="ml-auto text-xs opacity-60">閉じる</button></div>
                 {["lunch", "dinner"].map((p) => {
                   const list = byDate(focus.k).filter(({ r }) => covers(r, p));
-                  const need = data.ruleFor(days.find((d) => d.k === focus.k))[p];
+                  const fd = days.find((d) => d.k === focus.k);
+                  const need = fd ? data.ruleFor(fd)[p] : 0;
                   return (
                     <div key={p} className="mb-3">
                       <div className="flex items-center gap-2 mb-1"><Tag s={SLOT[p]}>{SLOT[p].label}</Tag><span className="text-xs tabular-nums opacity-70">{list.length}/{need}人</span></div>
