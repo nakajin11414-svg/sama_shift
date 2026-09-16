@@ -27,6 +27,12 @@ export function useShiftData(ym) {
 
   useEffect(() => { reload(); }, [reload]);
 
+  // 自分の書き込み直後は必ず再取得（Realtimeが無効でも画面が更新されるように）
+  useEffect(() => {
+    window.addEventListener("shift-refresh", reload);
+    return () => window.removeEventListener("shift-refresh", reload);
+  }, [reload]);
+
   useEffect(() => {
     const ch = supabase.channel("shift-changes");
     for (const t of ["requests", "day_settings", "publications", "staff", "settings", "profiles"]) {
@@ -65,7 +71,10 @@ export function useShiftData(ym) {
 }
 
 // ---------- 書き込み ----------
-const check = ({ error }) => { if (error) { alert(error.message); throw error; } };
+const check = ({ error }) => {
+  if (error) { alert(error.message); throw error; }
+  window.dispatchEvent(new Event("shift-refresh"));
+};
 
 export const api = {
   async upsertRequests(staffId, dates, type, start, end) {
