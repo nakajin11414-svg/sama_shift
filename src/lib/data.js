@@ -77,11 +77,12 @@ const check = ({ error }) => {
 };
 
 export const api = {
-  async upsertRequests(staffId, dates, type, start, end) {
+  async upsertRequests(staffId, dates, type, start, end, status) {
     const rows = dates.map((date) => ({
       staff_id: staffId, date, type,
       start_time: type === "custom" ? start : null,
       end_time: type === "custom" ? end : null,
+      ...(status ? { status } : {}), // 管理者のみ指定可（スタッフはトリガーで未承認に戻される）
     }));
     check(await supabase.from("requests").upsert(rows, { onConflict: "staff_id,date" }));
   },
