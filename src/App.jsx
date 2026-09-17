@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "./lib/supabase.js";
 import { finishLineLogin, signOut, startLineLogin } from "./lib/auth.js";
 import { useShiftData } from "./lib/data.js";
@@ -7,6 +7,7 @@ import { Btn } from "./ui.jsx";
 import StaffView from "./views/Staff.jsx";
 import ManagerView from "./views/Manager.jsx";
 import PublishedView from "./views/Published.jsx";
+import ManualView from "./views/Manual.jsx";
 
 export default function App() {
   const [session, setSession] = useState(undefined);
@@ -78,18 +79,52 @@ function Shell({ profile }) {
             <button key={k} onClick={() => setMode(k)} className="px-3 py-1 text-sm" style={mode === k ? { background: "#EEF1F3", color: NAVY } : {}}>{l}</button>
           ))}
         </nav>
-        <div className="flex items-center gap-2 text-xs">
-          {profile.picture_url && <img src={profile.picture_url} alt="" className="w-6 h-6 rounded-full" />}
-          <span>{profile.display_name}</span>
-          <button onClick={signOut} className="underline opacity-70">ログアウト</button>
-        </div>
+        <Menu profile={profile} isManager={isManager} onSelect={setMode} />
       </header>
 
       {error && <div className="px-4 py-2 text-sm" style={{ background: "#F7C6C6", color: "#7A1E1E" }}>読み込みエラー: {error}</div>}
       {!data ? <div className="p-6 text-sm">読み込み中…</div>
         : mode === "staff" ? <StaffView data={data} days={days} profile={profile} />
         : mode === "manager" && isManager ? <ManagerView data={data} days={days} mk={mk} profile={profile} />
+        : mode === "manual-manager" && isManager ? <ManualView kind="manager" />
+        : mode === "manual-staff" ? <ManualView kind="staff" />
         : <PublishedView data={data} days={days} mk={mk} isManager={isManager} />}
+    </div>
+  );
+}
+
+// 右上の三本線メニュー。項目を増やすときは items に追加する
+function Menu({ profile, isManager, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("click", h);
+    return () => document.removeEventListener("click", h);
+  }, []);
+  const items = [
+    ...(isManager ? [{ label: "管理者マニュアル", action: () => onSelect("manual-manager") }] : []),
+    { label: "スタッフの使い方", action: () => onSelect("manual-staff") },
+    { label: "ログアウト", action: signOut, danger: true },
+  ];
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen((o) => !o)} aria-label="メニュー" className="p-2 rounded hover:bg-white/10">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-1 w-56 rounded bg-white shadow-lg z-20 text-sm" style={{ color: NAVY, border: "1px solid #D5DCE2" }}>
+          <div className="flex items-center gap-2 px-3 py-2 text-xs" style={{ borderBottom: "1px solid #EEF1F3" }}>
+            {profile.picture_url && <img src={profile.picture_url} alt="" className="w-6 h-6 rounded-full" />}
+            <span className="truncate">{profile.display_name}</span>
+            {isManager && <span className="ml-auto opacity-60">管理者</span>}
+          </div>
+          {items.map((it) => (
+            <button key={it.label} onClick={() => { setOpen(false); it.action(); }}
+              className="w-full text-left px-3 py-2 hover:bg-gray-100" style={it.danger ? { color: "#9B2C2C" } : {}}>{it.label}</button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
