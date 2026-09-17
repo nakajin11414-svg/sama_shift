@@ -122,8 +122,9 @@ function ApproveView({ data, days, mk }) {
   );
 }
 
-function RosterView({ data }) {
+function RosterView({ data, profile }) {
   const [v, setV] = useState("");
+  const meLinked = data.staff.some((s) => s.profile_id === profile.id);
   const [names, setNames] = useState({}); // pending profile id -> 名簿に載せる名前
   const pending = data.profiles.filter((p) => p.role === "pending");
   const linked = Object.fromEntries(data.staff.filter((s) => s.profile_id).map((s) => [s.profile_id, s]));
@@ -186,7 +187,8 @@ function RosterView({ data }) {
       )}
 
       <Card className="p-4 flex-1 min-w-72">
-        <div className="text-sm mb-3">スタッフ名簿</div>
+        <div className="text-sm mb-1">スタッフ名簿</div>
+        {!meLinked && <div className="text-xs mb-3 px-2 py-1 rounded" style={{ background: "#F6EBD6", color: "#7A4A00" }}>あなた自身もシフトに入るなら、自分の名前を追加して「これは自分」を押してください。</div>}
         <div className="flex gap-2 mb-3">
           <input value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()}
             placeholder="名前を先に作っておく（LINE未ログインでも可）" className="flex-1 px-3 py-1.5 rounded border text-sm" style={{ borderColor: "#B8C2CC" }} />
@@ -202,6 +204,7 @@ function RosterView({ data }) {
                     {p ? <span className="ml-2 text-xs opacity-60">LINE: {p.display_name}{p.role === "manager" && "（管理者）"}</span>
                        : <span className="ml-2 text-xs" style={{ color: "#7A4A00" }}>LINE未連携</span>}
                   </span>
+                  {!s.profile_id && !meLinked && <Btn small tone="primary" onClick={() => api.updateStaff(s.id, { profile_id: profile.id })}>これは自分</Btn>}
                   {p && p.role !== "manager" && <Btn small onClick={() => confirm(`${s.name} さんを管理者にしますか？`) && api.setRole(p.id, "manager")}>管理者にする</Btn>}
                   {p && p.role === "manager" && data.profiles.filter((x) => x.role === "manager").length > 1 && <Btn small onClick={() => api.setRole(p.id, "staff")}>管理者を外す</Btn>}
                   <Btn small onClick={() => move(i, -1)}>↑</Btn>
