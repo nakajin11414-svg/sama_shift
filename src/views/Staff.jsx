@@ -4,12 +4,19 @@ import { WD, SLOT, NAVY, LINE, RED, slotShort, dayColor } from "../lib/util.js";
 import { Btn, Card } from "../ui.jsx";
 
 export default function StaffView({ data, days, profile }) {
-  const me = data.staff.find((s) => s.profile_id === profile.id);
+  const isManager = profile.role === "manager";
+  const myRow = data.staff.find((s) => s.profile_id === profile.id);
+  const [targetId, setTargetId] = useState(null); // 管理者が編集対象に選んだスタッフ
+  const me = isManager ? data.staff.find((s) => s.id === targetId) || myRow || data.staff[0] : myRow;
+  const editingOther = isManager && me && me.id !== myRow?.id;
   const [sel, setSel] = useState(new Set());
   const [start, setStart] = useState("10:00");
   const [end, setEnd] = useState("14:00");
   const [busy, setBusy] = useState(false);
 
+  if (isManager && !me) {
+    return <div className="p-6 text-sm opacity-70">スタッフ名簿が空です。管理者タブの「スタッフ名簿」から名前を追加してください。</div>;
+  }
   if (profile.role === "pending" || !me) {
     return (
       <div className="p-6 max-w-md mx-auto text-sm">
@@ -29,7 +36,8 @@ export default function StaffView({ data, days, profile }) {
   const apply = async (type) => {
     setBusy(true);
     try {
-      if (type) await api.upsertRequests(me.id, [...sel], type, start, end);
+      // 管理者が入力・変更した分は最初から承認済みにする
+      if (type) await api.upsertRequests(me.id, [...sel], type, start, end, isManager ? "approved" : undefined);
       else await api.deleteRequests(me.id, [...sel]);
       setSel(new Set());
     } finally { setBusy(false); }
@@ -37,8 +45,17 @@ export default function StaffView({ data, days, profile }) {
 
   return (
     <div className="p-4 max-w-3xl mx-auto">
+      {isManager && (
+        <div className="flex flex-wrap items-center gap-2 mb-3 text-sm p-2 rounded" style={{ background: "#F6EBD6" }}>
+          <span>編集する人</span>
+          <select value={me.id} onChange={(e) => { setTargetId(e.target.value); setSel(new Set()); }} className="px-2 py-1 rounded border bg-white" style={{ borderColor: "#B8C2CC" }}>
+            {data.staff.map((s) => <option key={s.id} value={s.id}>{s.name}{s.id === myRow?.id ? "（自分）" : ""}</option>)}
+          </select>
+          <span className="text-xs opacity-70">管理者が入れた希望はそのまま承認済みになります</span>
+        </div>
+      )}
       <div className="flex flex-wrap gap-2 mb-2 text-sm items-center">
-        <span className="mr-2">{me.name} さん</span>
+        <span className="mr-2">{me.name} さん{editingOther && <span className="text-xs ml-1" style={{ color: "#7A4A00" }}>の希望を代理で編集中</span>}</span>
         <Btn small onClick={() => pick(() => true)}>全選択</Btn>
         <Btn small onClick={() => pick((d) => !data.isHoliday(d))}>平日のみ</Btn>
         <Btn small onClick={() => pick(data.isHoliday)}>土日祝のみ</Btn>
