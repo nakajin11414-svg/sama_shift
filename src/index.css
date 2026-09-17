@@ -1,2 +1,15 @@
 @import "tailwindcss";
 body { margin: 0; font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; }
+
+/* 説明書の見た目 */
+.manual h1 { font-size: 1.5rem; font-weight: 600; margin: 0 0 1rem; }
+.manual h2 { font-size: 1.15rem; font-weight: 600; margin: 1.75rem 0 .5rem; padding-bottom: .25rem; border-bottom: 1px solid #D5DCE2; }
+.manual h3 { font-size: 1rem; font-weight: 600; margin: 1.25rem 0 .4rem; }
+.manual p, .manual ul, .manual ol { margin: .5rem 0; font-size: .9rem; }
+.manual ul { list-style: disc; padding-left: 1.4rem; }
+.manual ol { list-style: decimal; padding-left: 1.4rem; }
+.manual li { margin: .2rem 0; }
+.manual table { border-collapse: collapse; width: 100%; margin: .6rem 0 1rem; font-size: .85rem; display: block; overflow-x: auto; }
+.manual th, .manual td { border: 1px solid #D5DCE2; padding: .35rem .6rem; text-align: left; vertical-align: top; }
+.manual th { background: #EEF1F3; font-weight: 600; white-space: nowrap; }
+.manual code { background: #EEF1F3; padding: 0 .3rem; border-radius: 3px; font-size: .85em; }
