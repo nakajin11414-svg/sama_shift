@@ -88,7 +88,7 @@ function Shell({ profile }) {
       {error && <div className="px-4 py-2 text-sm" style={{ background: "#F7C6C6", color: "#7A1E1E" }}>読み込みエラー: {error}</div>}
       {!data ? <div className="p-6 text-sm">読み込み中…</div>
         : mode === "staff" ? <StaffView data={data} days={days} profile={profile} />
-        : mode === "manager" && isManager ? <ManagerView data={data} days={days} mk={mk} />
+        : mode === "manager" && isManager ? <ManagerView data={data} days={days} mk={mk} profile={profile} />
         : <PublishedView data={data} days={days} mk={mk} isManager={isManager} />}
     </div>
   );
