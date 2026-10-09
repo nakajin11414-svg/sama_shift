@@ -74,7 +74,10 @@ export function useShiftData(ym, storeId) {
     const hoursAll = Object.fromEntries(raw.daySettings.filter((d) => d.work_hours).map((d) => [`${d.store_id}|${d.date}`, d.work_hours]));
     const dayHours = (k) => hoursAll[`${store.id}|${k}`] || null;
     const windowsOf = (sid) => ({ ...DEFAULT_WINDOWS, ...(raw.stores.find((s) => s.id === sid)?.windows || {}) });
-    const workOf = (r) => (logs[r.id] ? { ...logs[r.id], individual: true } : autoWork(r, hoursAll[`${r.store_id}|${r.date}`], windowsOf(r.store_id)));
+    const workOf = (r) => {
+      const w = autoWork(r, hoursAll[`${r.store_id}|${r.date}`], windowsOf(r.store_id), logs[r.id]);
+      return w && logs[r.id] ? { ...w, individual: true } : w;
+    };
 
     // 枠ごとの人数と、デリバリー・厨房の有無
     const counts = {};
@@ -152,7 +155,7 @@ export const api = {
   async deleteAnnouncement(id) { check(await supabase.from("announcements").delete().eq("id", id)); },
   async markAnnouncementsRead(profileId) { check(await supabase.from("profiles").update({ announcements_read_at: new Date().toISOString() }).eq("id", profileId)); },
   // 実働時間
-  async setDayHours(storeId, date, work_hours) { check(await supabase.from("day_settings").upsert({ store_id: storeId, date, work_hours }, { onConflict: "store_id,date" })); },
+  async setDayWork(storeId, date, work_hours, delivery) { check(await supabase.from("day_settings").upsert({ store_id: storeId, date, work_hours, delivery }, { onConflict: "store_id,date" })); },
   async upsertWorkLog(row) { check(await supabase.from("work_logs").upsert({ ...row, updated_at: new Date().toISOString() }, { onConflict: "request_id" })); },
   async deleteWorkLog(requestId) { check(await supabase.from("work_logs").delete().eq("request_id", requestId)); },
 };

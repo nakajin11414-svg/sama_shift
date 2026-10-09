@@ -80,32 +80,37 @@ export function defaultTimes(req, windows = DEFAULT_WINDOWS) {
 // 通しの休憩はこの時刻まで（休憩開始だけ日ごとに入力する）
 export const BREAK_END = "17:00";
 
-// 日ごとの営業時間の初期値（枠の時間帯から）
+// 日ごとに入れるのは各枠の終業と通しの休憩開始だけ（開始は店舗の枠の時間帯で固定）
 export const defaultDayHours = (windows = DEFAULT_WINDOWS) => ({
-  lunch: { start: toT(windows.lunch[0]), end: toT(windows.lunch[1]) },
-  dinner: { start: toT(windows.dinner[0]), end: toT(windows.dinner[1]) },
+  prep: { end: toT(windows.prep[1]) },
+  lunch: { end: toT(windows.lunch[1]) },
+  dinner: { end: toT(windows.dinner[1]) },
   break_start: toT(windows.lunch[1]),
 });
 
-// 日ごとの営業時間（一括入力）から、その人の始業・終業・休憩を出す
-export function autoWork(req, H, windows = DEFAULT_WINDOWS) {
-  if (!H) return null;
+// その人の始業・終業・休憩を出す
+// H: その日の終業（一括入力）、own: 個別に直した始業・終業（あれば優先）
+export function autoWork(req, H, windows = DEFAULT_WINDOWS, own = null) {
+  if (!H && !own) return null;
   const ps = partsOf(req, windows);
-  if (!ps.length) return null;
+  const win = (p) => windows[p] || DEFAULT_WINDOWS[p];
+  const endOf = (p) => H?.[p]?.end || toT(win(p)[1]);
   let start, end;
-  if (req.type === "custom") {
+  if (own) {
+    start = hhmm(own.start_time); end = hhmm(own.end_time);
+  } else if (req.type === "custom") {
     // 「ランチ終業」「ディナー終業」で入れた希望は、その日の実際の終業に合わせる
     const e = toHour(req.end_time);
     start = hhmm(req.start_time);
-    end = e === windows.lunch[1] ? H.lunch.end : e === windows.dinner[1] ? H.dinner.end : hhmm(req.end_time);
+    end = e === win("lunch")[1] ? endOf("lunch") : e === win("dinner")[1] ? endOf("dinner") : hhmm(req.end_time);
   } else {
-    const range = (p) => (H[p] ? [H[p].start, H[p].end] : (windows[p] || DEFAULT_WINDOWS[p]).map(toT));
-    const rs = ps.map(range);
-    start = rs.map((r) => r[0]).reduce((a, b) => (toHour(b) < toHour(a) ? b : a));
-    end = rs.map((r) => r[1]).reduce((a, b) => (toHour(b) > toHour(a) ? b : a));
+    if (!ps.length) return null;
+    start = toT(Math.min(...ps.map((p) => win(p)[0])));
+    end = ps.map(endOf).reduce((a, b) => (toHour(b) > toHour(a) ? b : a));
   }
+  // 通しは休憩開始〜17時を休憩にする
   const through = ps.includes("lunch") && ps.includes("dinner");
-  const bs = Math.max(toHour(start), toHour(H.break_start || H.lunch.end));
+  const bs = Math.max(toHour(start), toHour(H?.break_start || endOf("lunch")));
   const be = Math.min(toHour(end), toHour(BREAK_END));
   const break_min = through ? Math.max(0, Math.round((be - bs) * 60)) : 0;
   return { start_time: start, end_time: end, break_min };
