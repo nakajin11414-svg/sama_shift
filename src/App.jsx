@@ -7,6 +7,7 @@ import { Btn } from "./ui.jsx";
 import StaffView from "./views/Staff.jsx";
 import ManagerView from "./views/Manager.jsx";
 import PublishedView from "./views/Published.jsx";
+import AnnouncementsView from "./views/Announcements.jsx";
 import ManualView from "./views/Manual.jsx";
 
 export default function App() {
@@ -17,9 +18,7 @@ export default function App() {
 
   useEffect(() => {
     if (isCallback) {
-      finishLineLogin()
-        .then(() => window.location.replace("/"))
-        .catch((e) => setLoginError(e.message));
+      finishLineLogin().then(() => window.location.replace("/")).catch((e) => setLoginError(e.message));
       return;
     }
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -57,26 +56,39 @@ function Login() {
 }
 
 function Shell({ profile }) {
-  const [mode, setMode] = useState(profile.role === "manager" ? "manager" : "staff");
-  const [ym, setYm] = useState(() => { const t = new Date(); return { y: t.getFullYear(), m: t.getMonth() }; });
-  const { data, days, mk, error } = useShiftData(ym);
-  const shift = (n) => setYm(({ y, m }) => { const d = new Date(y, m + n, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
   const isManager = profile.role === "manager";
-  const tabs = [["staff", "希望入力"], ...(isManager ? [["manager", "管理者"]] : []), ["published", "確定シフト"]];
+  const [mode, setMode] = useState(isManager ? "manager" : "staff");
+  const [ym, setYm] = useState(() => { const t = new Date(); return { y: t.getFullYear(), m: t.getMonth() }; });
+  const [storeId, setStoreId] = useState(() => localStorage.getItem("storeId") || null);
+  const { data, days, mk, error } = useShiftData(ym, storeId);
+  const shift = (n) => setYm(({ y, m }) => { const d = new Date(y, m + n, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
+  const chooseStore = (id) => { setStoreId(id); localStorage.setItem("storeId", id); };
+
+  // 未読のお知らせ件数（自分の店舗向けか全店舗向け）
+  const unread = data ? data.announcements.filter((a) => a.created_at > profile.announcements_read_at && (!a.store_id || !data.store || a.store_id === data.store.id)).length : 0;
+  const tabs = [["staff", "希望入力"], ...(isManager ? [["manager", "管理者"]] : []), ["published", "確定シフト"], ["news", "お知らせ", unread]];
 
   return (
     <div style={{ color: NAVY, background: "#EEF1F3", minHeight: "100vh" }}>
-      <header className="flex flex-wrap items-center gap-3 px-4 py-3" style={{ background: NAVY, color: "#EEF1F3" }}>
-        <div className="text-lg font-semibold tracking-wide">シフト表</div>
-        <div className="flex items-center gap-1 ml-2">
+      <header className="flex flex-wrap items-center gap-2 px-3 py-2" style={{ background: NAVY, color: "#EEF1F3" }}>
+        <div className="text-lg font-semibold tracking-wide mr-1">シフト表</div>
+        {data && data.stores.length > 0 && (
+          <select value={data.store?.id || ""} onChange={(e) => chooseStore(e.target.value)}
+            className="text-sm rounded px-2 py-1" style={{ background: "#2C3A5C", color: "#EEF1F3", border: "1px solid #4A5878" }}>
+            {data.stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        )}
+        <div className="flex items-center gap-1">
           <button onClick={() => shift(-1)} className="px-2 py-1 rounded hover:bg-white/10">‹</button>
-          <span className="tabular-nums w-24 text-center">{ym.y}年{ym.m + 1}月</span>
+          <span className="tabular-nums w-24 text-center text-sm">{ym.y}年{ym.m + 1}月</span>
           <button onClick={() => shift(1)} className="px-2 py-1 rounded hover:bg-white/10">›</button>
           {data?.published && <span className="text-xs px-2 py-0.5 rounded" style={{ background: "#8FBFA6", color: "#0F3A24" }}>公開中</span>}
         </div>
         <nav className="ml-auto flex rounded overflow-hidden" style={{ border: "1px solid #EEF1F3" }}>
-          {tabs.map(([k, l]) => (
-            <button key={k} onClick={() => setMode(k)} className="px-3 py-1 text-sm" style={mode === k ? { background: "#EEF1F3", color: NAVY } : {}}>{l}</button>
+          {tabs.map(([k, l, badge]) => (
+            <button key={k} onClick={() => setMode(k)} className="px-3 py-1 text-sm relative" style={mode === k ? { background: "#EEF1F3", color: NAVY } : {}}>
+              {l}{badge > 0 && <span className="ml-1 text-xs px-1.5 rounded-full" style={{ background: "#9B2C2C", color: "#fff" }}>{badge}</span>}
+            </button>
           ))}
         </nav>
         <Menu profile={profile} isManager={isManager} onSelect={setMode} />
@@ -84,11 +96,13 @@ function Shell({ profile }) {
 
       {error && <div className="px-4 py-2 text-sm" style={{ background: "#F7C6C6", color: "#7A1E1E" }}>読み込みエラー: {error}</div>}
       {!data ? <div className="p-6 text-sm">読み込み中…</div>
+        : !data.store && mode !== "manager" && !mode.startsWith("manual") ? <div className="p-6 text-sm">店舗がまだ登録されていません。管理者が「管理者 → 店舗」から登録してください。</div>
         : mode === "staff" ? <StaffView data={data} days={days} profile={profile} />
         : mode === "manager" && isManager ? <ManagerView data={data} days={days} mk={mk} profile={profile} />
+        : mode === "news" ? <AnnouncementsView data={data} profile={profile} isManager={isManager} />
         : mode === "manual-manager" && isManager ? <ManualView kind="manager" />
         : mode === "manual-staff" ? <ManualView kind="staff" />
-        : <PublishedView data={data} days={days} mk={mk} isManager={isManager} />}
+        : <PublishedView data={data} days={days} mk={mk} profile={profile} isManager={isManager} />}
     </div>
   );
 }

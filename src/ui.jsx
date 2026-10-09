@@ -17,8 +17,8 @@ export const Btn = ({ children, onClick, tone = "ghost", small, disabled, classN
   );
 };
 
-export const Card = ({ children, className = "", style }) => (
-  <div className={`rounded bg-white ${className}`} style={{ border: `1px solid ${LINE}`, ...style }}>{children}</div>
+export const Card = ({ children, className = "", style, ...rest }) => (
+  <div className={`rounded bg-white ${className}`} style={{ border: `1px solid ${LINE}`, ...style }} {...rest}>{children}</div>
 );
 
 export const Gauge = ({ n, p = 0, need }) => {

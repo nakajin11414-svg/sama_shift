@@ -3,12 +3,14 @@ export const NAVY = "#1F2A44";
 export const LINE = "#D5DCE2";
 export const RED = "#9B2C2C";
 
-export const SLOT = {
+// 枠（仕込み・ランチ・ディナー）
+export const PARTS = {
+  prep: { label: "仕込み", short: "仕", bg: "#C9D8C2", fg: "#1F3A18" },
   lunch: { label: "ランチ", short: "L", bg: "#F3D27A", fg: "#4A3600" },
   dinner: { label: "ディナー", short: "D", bg: "#B99BC6", fg: "#2B1234" },
-  both: { label: "通し", short: "通", bg: "#8FBFA6", fg: "#0F3A24" },
-  custom: { label: "時間指定", short: "他", bg: "#CFD8DE", fg: "#1F2A44" },
 };
+export const PART_KEYS = ["prep", "lunch", "dinner"];
+export const CUSTOM = { label: "時間指定", short: "他", bg: "#CFD8DE", fg: "#1F2A44" };
 export const STATUS = {
   pending: { label: "未承認", bg: "#EEF1F3", fg: "#5A6B7A" },
   approved: { label: "承認", bg: "#CFE8D8", fg: "#0F3A24" },
@@ -19,9 +21,11 @@ export const TYPE = {
   holiday: { label: "土日祝", fg: RED },
   event: { label: "イベント", fg: "#7A4A00" },
 };
-
-const LUNCH_WIN = [11, 15];
-const DINNER_WIN = [17, 22];
+export const SKILLS = {
+  can_delivery: { label: "デリバリー", short: "配" },
+  can_kitchen: { label: "厨房", short: "厨" },
+};
+export const DEFAULT_WINDOWS = { prep: [9, 11], lunch: [11, 15], dinner: [17, 22] };
 
 export const pad = (n) => String(n).padStart(2, "0");
 export const dkey = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
@@ -31,21 +35,48 @@ export const fmt = (k) => {
   return `${m}/${d}(${WD[new Date(y, m - 1, d).getDay()]})`;
 };
 export const hhmm = (t) => (t ? t.slice(0, 5) : "");
-const toHour = (t) => {
+export const toHour = (t) => {
   const [h, mm] = (t || "0:0").split(":").map(Number);
   return h + (mm || 0) / 60;
 };
 const overlaps = (s, e, [a, b]) => Math.min(e, b) - Math.max(s, a) > 0;
 
-export const slotText = (r) => (r.type === "custom" ? `${hhmm(r.start_time)}〜${hhmm(r.end_time)}` : SLOT[r.type].label);
-export const slotShort = (r) => (r.type === "custom" ? `${hhmm(r.start_time).slice(0, 2)}-${hhmm(r.end_time).slice(0, 2)}` : SLOT[r.type].short);
-
-export function covers(req, part) {
-  if (!req) return false;
-  if (req.type === "both" || req.type === part) return true;
-  if (req.type === "custom") return overlaps(toHour(req.start_time), toHour(req.end_time), part === "lunch" ? LUNCH_WIN : DINNER_WIN);
-  return false;
+// 希望がどの枠に入るか
+export function partsOf(req, windows = DEFAULT_WINDOWS) {
+  if (!req) return [];
+  if (req.type === "custom") {
+    const s = toHour(req.start_time), e = toHour(req.end_time);
+    return PART_KEYS.filter((p) => overlaps(s, e, windows[p] || DEFAULT_WINDOWS[p]));
+  }
+  return PART_KEYS.filter((p) => (req.parts || []).includes(p));
 }
+export const covers = (req, part, windows) => partsOf(req, windows).includes(part);
+
+// 表示用
+const ordered = (r) => PART_KEYS.filter((p) => (r.parts || []).includes(p));
+export const slotText = (r) =>
+  r.type === "custom" ? `${hhmm(r.start_time)}〜${hhmm(r.end_time)}` : ordered(r).map((p) => PARTS[p].label).join("＋") || "？";
+export const slotShort = (r) =>
+  r.type === "custom" ? `${hhmm(r.start_time).slice(0, 2)}-${hhmm(r.end_time).slice(0, 2)}` : ordered(r).map((p) => PARTS[p].short).join("") || "？";
+export const slotStyle = (r) => {
+  if (r.type === "custom") return CUSTOM;
+  const ps = ordered(r);
+  if (ps.length === 1) return PARTS[ps[0]];
+  if (ps.includes("lunch") && ps.includes("dinner")) return { bg: "#8FBFA6", fg: "#0F3A24" }; // 通し
+  return PARTS[ps[0]] || CUSTOM;
+};
+
+// 枠の組み合わせから標準の始業・終業（実働時間の初期値）
+export function defaultTimes(req, windows = DEFAULT_WINDOWS) {
+  if (req.type === "custom") return { start: hhmm(req.start_time), end: hhmm(req.end_time) };
+  const ps = partsOf(req, windows);
+  if (!ps.length) return { start: "10:00", end: "15:00" };
+  const w = ps.map((p) => windows[p] || DEFAULT_WINDOWS[p]);
+  const toT = (h) => `${pad(Math.floor(h))}:${pad(Math.round((h % 1) * 60))}`;
+  return { start: toT(Math.min(...w.map((x) => x[0]))), end: toT(Math.max(...w.map((x) => x[1]))) };
+}
+export const workHours = (log) => (log ? Math.max(0, toHour(log.end_time) - toHour(log.start_time) - (log.break_min || 0) / 60) : 0);
+export const fmtHours = (h) => (Math.round(h * 100) / 100).toFixed(2).replace(/\.?0+$/, "");
 
 export function monthDays(y, m) {
   const n = new Date(y, m + 1, 0).getDate();
