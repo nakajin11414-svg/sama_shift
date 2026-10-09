@@ -26,6 +26,22 @@ export const SKILLS = {
   can_kitchen: { label: "厨房", short: "厨" },
 };
 export const DEFAULT_WINDOWS = { prep: [9, 11], lunch: [11, 15], dinner: [17, 22] };
+// 基準人数の初期値（<枠>_delivery / <枠>_kitchen はデリバリー・厨房に必要な人数）
+export const DEFAULT_RULE = {
+  prep: 0, lunch: 0, dinner: 0,
+  prep_delivery: 0, prep_kitchen: 0, lunch_delivery: 1, lunch_kitchen: 1, dinner_delivery: 1, dinner_kitchen: 1,
+};
+
+// デリバリー・厨房の不足。両方できる人は、どちらか一方にしか数えない
+// 戻り値: { delivery, kitchen, either }（either = 両方できる人が足りず、どちらかがあと何人足りないか）
+export function skillShortage(c, rule, part) {
+  const d = rule[`${part}_delivery`] || 0, k = rule[`${part}_kitchen`] || 0;
+  const delivery = Math.max(0, d - c.onlyDelivery - c.both);
+  const kitchen = Math.max(0, k - c.onlyKitchen - c.both);
+  const total = Math.max(0, Math.max(0, d - c.onlyDelivery) + Math.max(0, k - c.onlyKitchen) - c.both);
+  const either = Math.max(0, total - delivery - kitchen);
+  return { delivery, kitchen, either, any: delivery + kitchen + either > 0 };
+}
 
 export const pad = (n) => String(n).padStart(2, "0");
 export const dkey = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;

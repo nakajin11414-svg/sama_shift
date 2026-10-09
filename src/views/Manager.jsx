@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/data.js";
-import { WD, PARTS, PART_KEYS, STATUS, TYPE, SKILLS, NAVY, LINE, RED, fmt, pad, holidayName, slotText, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm } from "../lib/util.js";
+import { WD, PARTS, PART_KEYS, STATUS, TYPE, SKILLS, NAVY, LINE, RED, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, slotText, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm } from "../lib/util.js";
 import { Btn, Card, Tag, Gauge } from "../ui.jsx";
 
 export default function ManagerView(props) {
@@ -25,14 +25,15 @@ export default function ManagerView(props) {
 }
 
 // 枠ごとの人数ゲージ＋デリバリー・厨房の警告
-function PartGauge({ c, need, compact }) {
-  const warn = c.n > 0 && (!c.delivery || !c.kitchen);
+function PartGauge({ c, rule, part, compact }) {
+  const sh = skillShortage(c, rule, part);
+  const warn = c.n > 0 && sh.any;
   return (
     <span className="inline-flex items-center gap-0.5">
-      <Gauge n={c.n} p={c.pending} need={need} />
+      <Gauge n={c.n} p={c.pending} need={rule[part]} />
       {warn && !compact && (
-        <span className="text-xs" style={{ color: RED }} title="承認済みの中にデリバリーまたは厨房ができる人がいません">
-          {!c.delivery && "配✕"}{!c.kitchen && "厨✕"}
+        <span className="text-xs" style={{ color: RED }} title="承認済みの人だけでは、デリバリー・厨房の必要人数に足りません（両方できる人はどちらか一方に数えます）">
+          {[sh.delivery && `配-${sh.delivery}`, sh.kitchen && `厨-${sh.kitchen}`, sh.either && `配か厨-${sh.either}`].filter(Boolean).join(" ")}
         </span>
       )}
       {warn && compact && <span className="text-xs" style={{ color: RED }}>!</span>}
@@ -82,7 +83,7 @@ function ApproveView({ data, days, mk }) {
                   {d.d}<span className="opacity-70 text-xs">({WD[d.w]})</span>
                   {t === "event" && <span className="block text-xs" style={{ color: TYPE.event.fg }}>イベント</span>}
                 </span>
-                {PART_KEYS.map((p) => <span key={p}><PartGauge c={cc[p]} need={rr[p]} compact /></span>)}
+                {PART_KEYS.map((p) => <span key={p}><PartGauge c={cc[p]} rule={rr} part={p} compact /></span>)}
                 <span onClick={(e) => { e.stopPropagation(); api.setRecruit(S.id, d.k, !rec); }}>
                   <span className="text-xs px-1.5 py-0.5 rounded cursor-pointer"
                     style={rec ? { background: RED, color: "#fff" } : { border: `1px dashed ${short ? RED : "#B8C2CC"}`, color: short ? RED : "#B8C2CC" }}>
@@ -92,7 +93,7 @@ function ApproveView({ data, days, mk }) {
               </div>
             );
           })}
-          <div className="px-3 py-2 text-xs opacity-70">「承認済み/基準 +未承認」。赤＝多い、黄＝足りない。「!」＝デリバリーか厨房ができる人がいない。</div>
+          <div className="px-3 py-2 text-xs opacity-70">「承認済み/基準 +未承認」。赤＝多い、黄＝足りない。「!」＝デリバリー・厨房の必要人数に足りない（両方できる人はどちらか一方に数えます）。</div>
         </Card>
 
         <Card className="flex-1 min-w-80 p-4 sticky top-4">
@@ -101,7 +102,7 @@ function ApproveView({ data, days, mk }) {
             {holidayName(day.k) && <span className="text-xs" style={{ color: RED }}>{holidayName(day.k)}</span>}
           </div>
           <div className="flex flex-wrap gap-2 mb-3 text-xs">
-            {PART_KEYS.map((p) => <span key={p} className="flex items-center gap-1"><Tag s={PARTS[p]}>{PARTS[p].label}</Tag><PartGauge c={c[p]} need={req[p]} /></span>)}
+            {PART_KEYS.map((p) => <span key={p} className="flex items-center gap-1"><Tag s={PARTS[p]}>{PARTS[p].label}</Tag><PartGauge c={c[p]} rule={req} part={p} /></span>)}
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-xs mb-3">
@@ -502,13 +503,23 @@ function StoresView({ data, days }) {
                 {Object.entries(TYPE).map(([g, t]) => (
                   <tr key={g}><td className="pr-2 py-1">{t.label}</td>
                     {PART_KEYS.map((p) => (
-                      <td key={p} className="px-2 py-1"><input type="number" min={0} key={`${g}${p}${rules[g]?.[p]}`} defaultValue={rules[g]?.[p] ?? 0} onBlur={(e) => Number(e.target.value) !== (rules[g]?.[p] ?? 0) && setRule(g, p, e.target.value)} className="w-14 border rounded px-1 tabular-nums" />人</td>
+                      <td key={p} className="px-2 py-1 align-top">
+                        {[[p, "全体"], [`${p}_delivery`, "うち配達"], [`${p}_kitchen`, "うち厨房"]].map(([key, label]) => {
+                          const cur = rules[g]?.[key] ?? DEFAULT_RULE[key];
+                          return (
+                            <label key={key} className="flex items-center justify-end gap-1 py-0.5">
+                              <span className="text-xs opacity-70">{label}</span>
+                              <input type="number" min={0} key={`${g}${key}${cur}`} defaultValue={cur} onBlur={(e) => Number(e.target.value) !== cur && setRule(g, key, e.target.value)} className="w-14 border rounded px-1 tabular-nums" />人
+                            </label>
+                          );
+                        })}
+                      </td>
                     ))}
                   </tr>
                 ))}
               </tbody>
             </table>
-            <div className="text-xs opacity-60 mt-2">入力欄から離れると保存されます。</div>
+            <div className="text-xs opacity-60 mt-2">入力欄から離れると保存されます。配達・厨房は全体の人数のうち何人必要かです。配達と厨房の両方ができる人は、どちらか一方にしか数えません。</div>
           </Card>
           <Card className="p-4">
             <div className="text-sm mb-1">{S.name} の枠の時間帯</div>

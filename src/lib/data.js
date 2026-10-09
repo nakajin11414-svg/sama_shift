@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase.js";
-import { autoWork, covers, holidayName, mkey, monthDays, DEFAULT_WINDOWS } from "./util.js";
+import { autoWork, covers, holidayName, mkey, monthDays, DEFAULT_RULE, DEFAULT_WINDOWS } from "./util.js";
 
 // 月と店舗ごとのデータをまとめて取得し、変更があれば自動で再取得する
 export function useShiftData(ym, storeId) {
@@ -65,7 +65,7 @@ export function useShiftData(ym, storeId) {
     const defaultType = (day) => (day.w === 0 || day.w === 6 || holidays.has(day.k) || holidayName(day.k) ? "holiday" : "weekday");
     const typeOf = (day) => daySet[day.k]?.day_type || defaultType(day);
     const isHoliday = (day) => typeOf(day) !== "weekday";
-    const ruleFor = (day) => ({ prep: 0, lunch: 0, dinner: 0, ...(store.rules?.[typeOf(day)] || store.rules?.weekday || {}) });
+    const ruleFor = (day) => ({ ...DEFAULT_RULE, ...(store.rules?.[typeOf(day)] || store.rules?.weekday || {}) });
     const isRecruit = (k) => !!daySet[k]?.recruit;
     const published = raw.pubs.some((p) => p.store_id === store.id);
     const logs = Object.fromEntries(raw.logs.map((l) => [l.request_id, l]));
@@ -79,11 +79,11 @@ export function useShiftData(ym, storeId) {
       return w && logs[r.id] ? { ...w, individual: true } : w;
     };
 
-    // 枠ごとの人数と、デリバリー・厨房の有無
+    // 枠ごとの人数と、承認済みの中のデリバリーだけ・厨房だけ・両方できる人の数
     const counts = {};
     for (const day of days) {
       const c = counts[day.k] = {};
-      for (const p of ["prep", "lunch", "dinner"]) c[p] = { n: 0, pending: 0, delivery: false, kitchen: false };
+      for (const p of ["prep", "lunch", "dinner"]) c[p] = { n: 0, pending: 0, onlyDelivery: 0, onlyKitchen: 0, both: 0 };
       for (const s of staffInStore) {
         const r = requests[s.id]?.[day.k];
         if (!r || r.status === "rejected") continue;
@@ -91,8 +91,9 @@ export function useShiftData(ym, storeId) {
           if (!covers(r, p, windows)) continue;
           if (r.status === "approved") {
             c[p].n++;
-            if (s.can_delivery) c[p].delivery = true;
-            if (s.can_kitchen) c[p].kitchen = true;
+            if (s.can_delivery && s.can_kitchen) c[p].both++;
+            else if (s.can_delivery) c[p].onlyDelivery++;
+            else if (s.can_kitchen) c[p].onlyKitchen++;
           } else c[p].pending++;
         }
       }
