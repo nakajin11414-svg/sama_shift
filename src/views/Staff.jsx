@@ -3,6 +3,8 @@ import { api } from "../lib/data.js";
 import { WD, PARTS, PART_KEYS, CUSTOM, NAVY, LINE, RED, slotShort, slotStyle, dayColor } from "../lib/util.js";
 import { Btn, Card } from "../ui.jsx";
 
+const HOURS = Array.from({ length: 15 }, (_, i) => i + 8); // 8〜22時
+
 export default function StaffView({ data, days, profile }) {
   const isManager = profile.role === "manager";
   const myRow = data.staff.find((s) => s.profile_id === profile.id);
@@ -12,8 +14,8 @@ export default function StaffView({ data, days, profile }) {
   const inStore = me && data.membership[me.id]?.has(data.store.id);
   const [sel, setSel] = useState(new Set());
   const [parts, setParts] = useState(new Set(["lunch"]));
-  const [start, setStart] = useState("10:00");
-  const [end, setEnd] = useState("14:00");
+  const [start, setStart] = useState(10);
+  const [end, setEnd] = useState("14");
   const [busy, setBusy] = useState(false);
 
   if (isManager && !me) {
@@ -40,11 +42,19 @@ export default function StaffView({ data, days, profile }) {
   const pick = (pred) => setSel(new Set(days.filter(pred).map((d) => d.k)));
   const togglePart = (p) => setParts((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; });
 
+  const hh = (h) => `${String(h).padStart(2, "0")}:00`;
+  const endFor = (v) => (v === "lunch" || v === "dinner" ? data.windows[v][1] : Number(v));
+  const endChoices = [
+    ...["lunch", "dinner"].filter((p) => data.windows[p][1] > start).map((p) => ({ v: p, label: `${PARTS[p].label}終わりまで（${data.windows[p][1]}時）` })),
+    ...HOURS.filter((h) => h > start).map((h) => ({ v: String(h), label: `${h}時` })),
+  ];
+  const changeStart = (h) => { setStart(h); if (endFor(end) <= h) setEnd(String(h + 1)); };
+
   const apply = async (type) => {
     if (type === "parts" && parts.size === 0) return alert("枠を1つ以上選んでください");
     setBusy(true);
     try {
-      if (type) await api.upsertRequests(me.id, data.store.id, [...sel], type, PART_KEYS.filter((p) => parts.has(p)), start, end, isManager ? "approved" : undefined);
+      if (type) await api.upsertRequests(me.id, data.store.id, [...sel], type, PART_KEYS.filter((p) => parts.has(p)), hh(start), hh(endFor(end)), isManager ? "approved" : undefined);
       else await api.deleteRequests(me.id, data.store.id, [...sel]);
       setSel(new Set());
     } finally { setBusy(false); }
@@ -112,8 +122,12 @@ export default function StaffView({ data, days, profile }) {
         </div>
         <div className="flex flex-wrap gap-2 items-center">
           <span className="flex items-center gap-1 text-sm">
-            <input type="time" value={start} onChange={(e) => setStart(e.target.value)} className="border rounded px-1" />〜
-            <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} className="border rounded px-1" />
+            <select value={start} onChange={(e) => changeStart(Number(e.target.value))} className="border rounded px-1 py-1 bg-white">
+              {HOURS.filter((h) => h < 22).map((h) => <option key={h} value={h}>{h}時</option>)}
+            </select>〜
+            <select value={end} onChange={(e) => setEnd(e.target.value)} className="border rounded px-1 py-1 bg-white">
+              {endChoices.map((c) => <option key={c.v} value={c.v}>{c.label}</option>)}
+            </select>
             <button disabled={!sel.size || busy} onClick={() => apply("custom")} className="px-3 py-1.5 rounded disabled:opacity-40"
               style={{ background: CUSTOM.bg, color: CUSTOM.fg }}>時間指定で登録</button>
           </span>
