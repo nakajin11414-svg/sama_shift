@@ -6,8 +6,8 @@ export const RED = "#9B2C2C";
 // 枠（仕込み・ランチ・ディナー）
 export const PARTS = {
   prep: { label: "仕込み", short: "仕", bg: "#C9D8C2", fg: "#1F3A18" },
-  lunch: { label: "ランチ", short: "L", bg: "#F3D27A", fg: "#4A3600" },
-  dinner: { label: "ディナー", short: "D", bg: "#B99BC6", fg: "#2B1234" },
+  lunch: { label: "ランチ", short: "ラ", bg: "#F3D27A", fg: "#4A3600" },
+  dinner: { label: "ディナー", short: "デ", bg: "#B99BC6", fg: "#2B1234" },
 };
 export const PART_KEYS = ["prep", "lunch", "dinner"];
 export const CUSTOM = { label: "時間指定", short: "他", bg: "#CFD8DE", fg: "#1F2A44" };
@@ -57,7 +57,7 @@ const ordered = (r) => PART_KEYS.filter((p) => (r.parts || []).includes(p));
 export const slotText = (r) =>
   r.type === "custom" ? `${hhmm(r.start_time)}〜${hhmm(r.end_time)}` : ordered(r).map((p) => PARTS[p].label).join("＋") || "？";
 export const slotShort = (r) =>
-  r.type === "custom" ? `${hhmm(r.start_time).slice(0, 2)}-${hhmm(r.end_time).slice(0, 2)}` : ordered(r).map((p) => PARTS[p].short).join("") || "？";
+  r.type === "custom" ? `${hhmm(r.start_time).slice(0, 2)}-${hhmm(r.end_time).slice(0, 2)}` : ordered(r).map((p) => PARTS[p].short).join("").replace("ラデ", "通") || "？";
 export const slotStyle = (r) => {
   if (r.type === "custom") return CUSTOM;
   const ps = ordered(r);
