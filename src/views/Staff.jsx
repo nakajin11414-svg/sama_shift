@@ -40,9 +40,19 @@ export default function StaffView({ data, days, profile }) {
   const lead = days[0].w;
   const toggle = (k) => setSel((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
   const pick = (pred) => setSel(new Set(days.filter(pred).map((d) => d.k)));
-  const togglePart = (p) => setParts((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; });
+  // 「通し」はランチ・ディナーとは別のボタンとして選ぶ（どちらかを選ぶともう一方は外れる）
+  const togglePart = (p) => setParts((s) => {
+    const n = new Set(s);
+    if (n.has(p)) n.delete(p);
+    else {
+      n.add(p);
+      if (p === "through") { n.delete("lunch"); n.delete("dinner"); }
+      if (p === "lunch" || p === "dinner") n.delete("through");
+    }
+    return n;
+  });
+  const chosenParts = () => PART_KEYS.filter((p) => parts.has(p) || (parts.has("through") && (p === "lunch" || p === "dinner")));
 
-  const isThrough = parts.size === 2 && parts.has("lunch") && parts.has("dinner");
   const hh = (h) => `${String(h).padStart(2, "0")}:00`;
   const endFor = (v) => (v === "lunch" || v === "dinner" ? data.windows[v][1] : Number(v));
   const endChoices = [
@@ -55,7 +65,7 @@ export default function StaffView({ data, days, profile }) {
     if (type === "parts" && parts.size === 0) return alert("枠を1つ以上選んでください");
     setBusy(true);
     try {
-      if (type) await api.upsertRequests(me.id, data.store.id, [...sel], type, PART_KEYS.filter((p) => parts.has(p)), hh(start), hh(endFor(end)), isManager ? "approved" : undefined);
+      if (type) await api.upsertRequests(me.id, data.store.id, [...sel], type, chosenParts(), hh(start), hh(endFor(end)), isManager ? "approved" : undefined);
       else await api.deleteRequests(me.id, data.store.id, [...sel]);
       setSel(new Set());
     } finally { setBusy(false); }
@@ -118,8 +128,8 @@ export default function StaffView({ data, days, profile }) {
               {PARTS[p].label}
             </button>
           ))}
-          <button onClick={() => setParts(isThrough ? new Set() : new Set(["lunch", "dinner"]))} className="px-3 py-1.5 rounded text-sm"
-            style={isThrough ? { background: `linear-gradient(90deg, ${PARTS.lunch.bg} 50%, ${PARTS.dinner.bg} 50%)`, color: NAVY, outline: `2px solid ${NAVY}` } : { background: "#fff", color: NAVY, border: `1px solid ${LINE}` }}>
+          <button onClick={() => togglePart("through")} className="px-3 py-1.5 rounded text-sm"
+            style={parts.has("through") ? { background: slotStyle({ parts: ["lunch", "dinner"] }).bg, color: slotStyle({ parts: ["lunch", "dinner"] }).fg, outline: `2px solid ${NAVY}` } : { background: "#fff", color: NAVY, border: `1px solid ${LINE}` }}>
             通し
           </button>
           <Btn tone="primary" disabled={!sel.size || busy || !parts.size} onClick={() => apply("parts")}>この枠で登録</Btn>

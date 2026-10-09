@@ -118,6 +118,49 @@ export function autoWork(req, H, windows = DEFAULT_WINDOWS, own = null) {
 export const workHours = (log) => (log ? Math.max(0, toHour(log.end_time) - toHour(log.start_time) - (log.break_min || 0) / 60) : 0);
 export const fmtHours = (h) => (Math.round(h * 100) / 100).toFixed(2).replace(/\.?0+$/, "");
 
+// 日本の祝日（振替休日・国民の休日を含む）。春分・秋分は 1980〜2099 年の近似式
+const holidayCache = {};
+function jpHolidays(y) {
+  if (holidayCache[y]) return holidayCache[y];
+  const h = {};
+  const add = (m, d, name) => { h[dkey(y, m - 1, d)] = name; };
+  const nthMonday = (m, n) => { const w = new Date(y, m - 1, 1).getDay(); return 1 + ((8 - w) % 7) + (n - 1) * 7; };
+  const q = Math.floor((y - 1980) / 4);
+  add(1, 1, "元日");
+  add(1, nthMonday(1, 2), "成人の日");
+  add(2, 11, "建国記念の日");
+  add(2, 23, "天皇誕生日");
+  add(3, Math.floor(20.8431 + 0.242194 * (y - 1980) - q), "春分の日");
+  add(4, 29, "昭和の日");
+  add(5, 3, "憲法記念日");
+  add(5, 4, "みどりの日");
+  add(5, 5, "こどもの日");
+  add(7, nthMonday(7, 3), "海の日");
+  add(8, 11, "山の日");
+  add(9, nthMonday(9, 3), "敬老の日");
+  add(9, Math.floor(23.2488 + 0.242194 * (y - 1980) - q), "秋分の日");
+  add(10, nthMonday(10, 2), "スポーツの日");
+  add(11, 3, "文化の日");
+  add(11, 23, "勤労感謝の日");
+  const keyOf = (dt) => dkey(dt.getFullYear(), dt.getMonth(), dt.getDate());
+  // 国民の休日（祝日に挟まれた平日）
+  for (const k of Object.keys(h)) {
+    const [yy, mm, dd] = k.split("-").map(Number);
+    const mid = new Date(yy, mm - 1, dd + 1), next = new Date(yy, mm - 1, dd + 2);
+    if (!h[keyOf(mid)] && h[keyOf(next)] && mid.getDay() !== 0) h[keyOf(mid)] = "国民の休日";
+  }
+  // 振替休日（日曜の祝日の後の最初の平日）
+  for (const k of Object.keys(h)) {
+    const [yy, mm, dd] = k.split("-").map(Number);
+    if (new Date(yy, mm - 1, dd).getDay() !== 0) continue;
+    let dt = new Date(yy, mm - 1, dd + 1);
+    while (h[keyOf(dt)]) dt = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate() + 1);
+    h[keyOf(dt)] = "振替休日";
+  }
+  return (holidayCache[y] = h);
+}
+export const holidayName = (k) => jpHolidays(Number(k.slice(0, 4)))[k];
+
 export function monthDays(y, m) {
   const n = new Date(y, m + 1, 0).getDate();
   return Array.from({ length: n }, (_, i) => ({ d: i + 1, k: dkey(y, m, i + 1), w: new Date(y, m, i + 1).getDay() }));

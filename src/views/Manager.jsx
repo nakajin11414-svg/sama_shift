@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/data.js";
-import { WD, PARTS, PART_KEYS, STATUS, TYPE, SKILLS, NAVY, LINE, RED, fmt, pad, slotText, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm } from "../lib/util.js";
+import { WD, PARTS, PART_KEYS, STATUS, TYPE, SKILLS, NAVY, LINE, RED, fmt, pad, holidayName, slotText, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm } from "../lib/util.js";
 import { Btn, Card, Tag, Gauge } from "../ui.jsx";
 
 export default function ManagerView(props) {
@@ -98,6 +98,7 @@ function ApproveView({ data, days, mk }) {
         <Card className="flex-1 min-w-80 p-4 sticky top-4">
           <div className="flex flex-wrap items-center gap-2 mb-2">
             <span className="text-base font-medium">{fmt(day.k)}</span>
+            {holidayName(day.k) && <span className="text-xs" style={{ color: RED }}>{holidayName(day.k)}</span>}
           </div>
           <div className="flex flex-wrap gap-2 mb-3 text-xs">
             {PART_KEYS.map((p) => <span key={p} className="flex items-center gap-1"><Tag s={PARTS[p]}>{PARTS[p].label}</Tag><PartGauge c={c[p]} need={req[p]} /></span>)}

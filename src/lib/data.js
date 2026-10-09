@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase.js";
-import { autoWork, covers, mkey, monthDays, DEFAULT_WINDOWS } from "./util.js";
+import { autoWork, covers, holidayName, mkey, monthDays, DEFAULT_WINDOWS } from "./util.js";
 
 // 月と店舗ごとのデータをまとめて取得し、変更があれば自動で再取得する
 export function useShiftData(ym, storeId) {
@@ -62,7 +62,7 @@ export function useShiftData(ym, storeId) {
     }
     const daySet = Object.fromEntries(raw.daySettings.filter((d) => d.store_id === store.id).map((d) => [d.date, d]));
     const holidays = new Set(store.holidays || []);
-    const defaultType = (day) => (day.w === 0 || day.w === 6 || holidays.has(day.k) ? "holiday" : "weekday");
+    const defaultType = (day) => (day.w === 0 || day.w === 6 || holidays.has(day.k) || holidayName(day.k) ? "holiday" : "weekday");
     const typeOf = (day) => daySet[day.k]?.day_type || defaultType(day);
     const isHoliday = (day) => typeOf(day) !== "weekday";
     const ruleFor = (day) => ({ prep: 0, lunch: 0, dinner: 0, ...(store.rules?.[typeOf(day)] || store.rules?.weekday || {}) });
