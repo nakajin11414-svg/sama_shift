@@ -27,12 +27,12 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
                   <span className="tabular-nums w-16" style={{ color: dayColor(d, data.isHoliday(d)) }}>{fmt(d.k)}</span>
                   <span className="w-20 truncate text-xs opacity-70">{store?.name}</span>
                   <Tag s={slotStyle(r)}>{slotText(r)}</Tag>
-                  {data.logs[r.id] && <span className="ml-auto text-xs tabular-nums opacity-70">実働 {fmtHours(workHours(data.logs[r.id]))}h</span>}
+                  {data.workOf(r) && <span className="ml-auto text-xs tabular-nums opacity-70">実働 {fmtHours(workHours(data.workOf(r)))}h</span>}
                 </li>
               ))}
             </ul>
           )}
-          <div className="mt-2 text-xs opacity-70">計 {myAll.length} 日{Object.values(data.logs).length > 0 && `　実働合計 ${fmtHours(myAll.reduce((a, x) => a + workHours(data.logs[x.r.id]), 0))}h`}</div>
+          <div className="mt-2 text-xs opacity-70">計 {myAll.length} 日{myAll.some((x) => data.workOf(x.r)) && `　実働合計 ${fmtHours(myAll.reduce((a, x) => a + workHours(data.workOf(x.r)), 0))}h`}</div>
         </Card>
       </div>
     );
@@ -117,7 +117,7 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
                     <li key={d.k} className="flex items-center gap-2 py-1.5">
                       <span className="tabular-nums w-16" style={{ color: dayColor(d, data.isHoliday(d)) }}>{fmt(d.k)}</span>
                       <Tag s={slotStyle(r)}>{slotText(r)}</Tag>
-                      {data.logs[r.id] && <span className="ml-auto text-xs tabular-nums opacity-70">{fmtHours(workHours(data.logs[r.id]))}h</span>}
+                      {data.workOf(r) && <span className="ml-auto text-xs tabular-nums opacity-70">{fmtHours(workHours(data.workOf(r)))}h</span>}
                     </li>
                   ))}
                 </ul>

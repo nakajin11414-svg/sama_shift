@@ -42,10 +42,11 @@ export default function StaffView({ data, days, profile }) {
   const pick = (pred) => setSel(new Set(days.filter(pred).map((d) => d.k)));
   const togglePart = (p) => setParts((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; });
 
+  const isThrough = parts.size === 2 && parts.has("lunch") && parts.has("dinner");
   const hh = (h) => `${String(h).padStart(2, "0")}:00`;
   const endFor = (v) => (v === "lunch" || v === "dinner" ? data.windows[v][1] : Number(v));
   const endChoices = [
-    ...["lunch", "dinner"].filter((p) => data.windows[p][1] > start).map((p) => ({ v: p, label: `${PARTS[p].label}終わりまで（${data.windows[p][1]}時）` })),
+    ...["lunch", "dinner"].filter((p) => data.windows[p][1] > start).map((p) => ({ v: p, label: `${PARTS[p].label}終業` })),
     ...HOURS.filter((h) => h > start).map((h) => ({ v: String(h), label: `${h}時` })),
   ];
   const changeStart = (h) => { setStart(h); if (endFor(end) <= h) setEnd(String(h + 1)); };
@@ -117,8 +118,12 @@ export default function StaffView({ data, days, profile }) {
               {PARTS[p].label}
             </button>
           ))}
+          <button onClick={() => setParts(isThrough ? new Set() : new Set(["lunch", "dinner"]))} className="px-3 py-1.5 rounded text-sm"
+            style={isThrough ? { background: `linear-gradient(90deg, ${PARTS.lunch.bg} 50%, ${PARTS.dinner.bg} 50%)`, color: NAVY, outline: `2px solid ${NAVY}` } : { background: "#fff", color: NAVY, border: `1px solid ${LINE}` }}>
+            通し
+          </button>
           <Btn tone="primary" disabled={!sel.size || busy || !parts.size} onClick={() => apply("parts")}>この枠で登録</Btn>
-          <span className="text-xs opacity-60">複数選ぶと組み合わせ（例: ランチ＋ディナー＝通し）</span>
+          <span className="text-xs opacity-60">通し＝ランチ＋ディナー。複数選ぶと組み合わせ（例: 仕込み＋ランチ）</span>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
           <span className="flex items-center gap-1 text-sm">

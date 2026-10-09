@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/data.js";
-import { WD, PARTS, PART_KEYS, STATUS, TYPE, SKILLS, NAVY, LINE, RED, fmt, slotText, slotStyle, dayColor, defaultTimes, workHours, fmtHours, hhmm } from "../lib/util.js";
+import { WD, PARTS, PART_KEYS, STATUS, TYPE, SKILLS, NAVY, LINE, RED, fmt, slotText, slotStyle, dayColor, defaultTimes, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm } from "../lib/util.js";
 import { Btn, Card, Tag, Gauge } from "../ui.jsx";
 
 export default function ManagerView(props) {
@@ -154,23 +154,25 @@ function ApproveView({ data, days, mk }) {
 // ---------- 実働時間 ----------
 function WorkLogView({ data, days, mk }) {
   const [edit, setEdit] = useState(null); // request row
+  const [dayEdit, setDayEdit] = useState(null); // day
   const S = data.store;
   const approved = (sid, k) => { const r = data.requests[sid]?.[k]; return r && r.status === "approved" ? r : null; };
   const staff = data.staffInStore.filter((s) => days.some((d) => approved(s.id, d.k)));
-  const total = (s) => days.reduce((a, d) => { const r = approved(s.id, d.k); return a + (r ? workHours(data.logs[r.id]) : 0); }, 0);
+  const hoursOf = (r) => (r ? workHours(data.workOf(r)) : 0);
+  const total = (s) => days.reduce((a, d) => a + hoursOf(approved(s.id, d.k)), 0);
   const cellW = 56;
 
   const csv = () => {
     const lines = [["名前", ...days.map((d) => `${d.d}(${WD[d.w]})`), "合計時間"]];
-    for (const s of staff) lines.push([s.name, ...days.map((d) => { const r = approved(s.id, d.k); return r && data.logs[r.id] ? fmtHours(workHours(data.logs[r.id])) : ""; }), fmtHours(total(s))]);
-    const blob = new Blob(["\uFEFF" + lines.map((l) => l.join(",")).join("\n")], { type: "text/csv" });
+    for (const s of staff) lines.push([s.name, ...days.map((d) => { const r = approved(s.id, d.k); return r && data.workOf(r) ? fmtHours(hoursOf(r)) : ""; }), fmtHours(total(s))]);
+    const blob = new Blob(["﻿" + lines.map((l) => l.join(",")).join("\n")], { type: "text/csv" });
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `実働時間_${S.name}_${mk}.csv`; a.click();
   };
 
   return (
     <div>
       <div className="flex flex-wrap items-center gap-3 mb-3 text-sm">
-        <span>承認済みのシフトをタップして、始業・終業・休憩を入力します。未入力の日は「−」です。</span>
+        <span>日付をタップ → その日のランチ・ディナーの営業時間と通しの休憩をまとめて入力。早上がり・遅刻などは各セルをタップして個別に直します。</span>
         <Btn small className="ml-auto" onClick={csv} disabled={!staff.length}>CSVを保存</Btn>
       </div>
       <Card className="overflow-x-auto">
@@ -178,7 +180,13 @@ function WorkLogView({ data, days, mk }) {
           <thead>
             <tr>
               <th className="sticky left-0 z-10 bg-white text-left px-3 py-2 text-sm font-medium" style={{ minWidth: 120, borderRight: `2px solid ${NAVY}`, borderBottom: `1px solid ${LINE}` }}>名前</th>
-              {days.map((d) => <th key={d.k} className="px-1 py-1 text-xs font-normal tabular-nums" style={{ width: cellW, minWidth: cellW, background: data.isHoliday(d) ? "#F7F2F2" : "#fff", borderBottom: `1px solid ${LINE}`, color: dayColor(d, data.isHoliday(d)) }}>{d.d}<span className="opacity-70">({WD[d.w]})</span></th>)}
+              {days.map((d) => (
+                <th key={d.k} onClick={() => setDayEdit(d)} className="px-1 py-1 text-xs font-normal tabular-nums cursor-pointer" title="この日の営業時間をまとめて入力"
+                  style={{ width: cellW, minWidth: cellW, background: data.dayHours(d.k) ? "#E3F1E8" : data.isHoliday(d) ? "#F7F2F2" : "#fff", borderBottom: `1px solid ${LINE}`, color: dayColor(d, data.isHoliday(d)) }}>
+                  {d.d}<span className="opacity-70">({WD[d.w]})</span>
+                  {data.dayHours(d.k) && <span className="block" style={{ color: "#0F3A24" }}>入力済</span>}
+                </th>
+              ))}
               <th className="px-2 py-1 text-xs font-medium whitespace-nowrap" style={{ borderBottom: `1px solid ${LINE}`, borderLeft: `2px solid ${NAVY}` }}>合計</th>
             </tr>
           </thead>
@@ -189,12 +197,13 @@ function WorkLogView({ data, days, mk }) {
                 <td className="sticky left-0 z-10 bg-white px-3 py-1.5 text-sm whitespace-nowrap" style={{ borderRight: `2px solid ${NAVY}`, borderBottom: "1px solid #EEF1F3" }}>{s.name}</td>
                 {days.map((d) => {
                   const r = approved(s.id, d.k);
-                  const log = r && data.logs[r.id];
+                  const w = r && data.workOf(r);
                   return (
                     <td key={d.k} className="text-center py-1 text-xs tabular-nums" style={{ borderBottom: "1px solid #EEF1F3", background: data.isHoliday(d) ? "#FBF8F8" : undefined }}>
                       {r && (
-                        <button onClick={() => setEdit(r)} className="px-1.5 py-0.5 rounded" style={log ? { background: "#CFE8D8", color: "#0F3A24" } : { background: slotStyle(r).bg, color: slotStyle(r).fg }} title={slotText(r)}>
-                          {log ? fmtHours(workHours(log)) : "−"}
+                        <button onClick={() => setEdit(r)} className="px-1.5 py-0.5 rounded" title={`${slotText(r)}${w?.individual ? "（個別に修正）" : ""}`}
+                          style={w?.individual ? { background: "#CFE8D8", color: "#0F3A24", outline: "1px solid #0F3A24" } : w ? { background: "#CFE8D8", color: "#0F3A24" } : { background: slotStyle(r).bg, color: slotStyle(r).fg }}>
+                          {w ? fmtHours(workHours(w)) : "−"}{w?.individual && "*"}
                         </button>
                       )}
                     </td>
@@ -206,7 +215,61 @@ function WorkLogView({ data, days, mk }) {
           </tbody>
         </table>
       </Card>
+      <div className="mt-1 text-xs opacity-70">日付の「入力済」＝営業時間を入力した日 ／ 数字の「*」＝個別に修正した人（一括入力より優先）</div>
       {edit && <WorkLogEditor data={data} req={edit} onClose={() => setEdit(null)} />}
+      {dayEdit && <DayHoursEditor data={data} day={dayEdit} rows={staff.map((s) => ({ s, r: approved(s.id, dayEdit.k) })).filter((x) => x.r)} onClose={() => setDayEdit(null)} />}
+    </div>
+  );
+}
+
+// その日のランチ・ディナーの営業時間と通しの休憩開始をまとめて入力
+function DayHoursEditor({ data, day, rows, onClose }) {
+  const saved = data.dayHours(day.k);
+  const [v, setV] = useState(saved || defaultDayHours(data.windows));
+  // ランチ終業を変えたら、同じ時刻だった休憩開始も合わせる
+  const set = (part, key, val) => setV({ ...v, [part]: { ...v[part], [key]: val },
+    ...(part === "lunch" && key === "end" && v.break_start === v.lunch.end ? { break_start: val } : {}) });
+  const preview = (r) => (data.logs[r.id] ? { ...data.logs[r.id], individual: true } : autoWork(r, v, data.windows));
+  const save = async () => { await api.setDayHours(data.store.id, day.k, v); onClose(); };
+  const timeIn = (val, on) => <input type="time" value={val} onChange={(e) => on(e.target.value)} className="border rounded px-1" />;
+  return (
+    <div className="fixed inset-0 z-30 flex items-center justify-center p-4" style={{ background: "rgba(31,42,68,.4)" }} onClick={onClose}>
+      <Card className="p-4 w-96 max-w-full text-sm max-h-full overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="font-medium mb-3">{fmt(day.k)} の営業時間</div>
+        {["lunch", "dinner"].map((p) => (
+          <div key={p} className="flex items-center justify-between gap-2 mb-2">
+            <Tag s={PARTS[p]}>{PARTS[p].label}</Tag>
+            <span className="flex items-center gap-1">{timeIn(v[p].start, (x) => set(p, "start", x))}〜{timeIn(v[p].end, (x) => set(p, "end", x))}</span>
+          </div>
+        ))}
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <span>通しの休憩</span>
+          <span className="flex items-center gap-1">{timeIn(v.break_start, (x) => setV({ ...v, break_start: x }))}〜{BREAK_END}</span>
+        </div>
+        {rows.length > 0 && (
+          <ul className="mb-3 text-xs divide-y" style={{ borderTop: `1px solid ${LINE}`, borderColor: "#EEF1F3" }}>
+            {rows.map(({ s, r }) => {
+              const w = preview(r);
+              return (
+                <li key={s.id} className="flex items-center gap-2 py-1.5">
+                  <span className="w-20 truncate">{s.name}</span>
+                  <Tag s={slotStyle(r)}>{slotText(r)}</Tag>
+                  <span className="ml-auto tabular-nums">
+                    {w ? <>{hhmm(w.start_time)}〜{hhmm(w.end_time)}{w.break_min > 0 && ` 休${w.break_min}分`}　{fmtHours(workHours(w))}h</> : "−"}
+                    {w?.individual && <span className="ml-1" style={{ color: "#7A4A00" }}>個別</span>}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <div className="text-xs opacity-70 mb-3">個別に修正した人は、その時間のまま変わりません。</div>
+        <div className="flex gap-2 justify-end">
+          {saved && <Btn small onClick={async () => { await api.setDayHours(data.store.id, day.k, null); onClose(); }}>クリア</Btn>}
+          <Btn small onClick={onClose}>閉じる</Btn>
+          <Btn small tone="primary" onClick={save}>この日の全員に反映</Btn>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -214,7 +277,9 @@ function WorkLogView({ data, days, mk }) {
 function WorkLogEditor({ data, req, onClose }) {
   const s = data.staff.find((x) => x.id === req.staff_id);
   const log = data.logs[req.id];
-  const init = log ? { start: hhmm(log.start_time), end: hhmm(log.end_time), br: log.break_min, note: log.note || "" } : { ...defaultTimes(req, data.windows), br: 0, note: "" };
+  const auto = autoWork(req, data.dayHours(req.date), data.windows);
+  const base = log || auto;
+  const init = base ? { start: hhmm(base.start_time), end: hhmm(base.end_time), br: base.break_min, note: log?.note || "" } : { ...defaultTimes(req, data.windows), br: 0, note: "" };
   const [v, setV] = useState(init);
   const hours = workHours({ start_time: v.start, end_time: v.end, break_min: Number(v.br) || 0 });
   const save = async () => {
@@ -225,16 +290,18 @@ function WorkLogEditor({ data, req, onClose }) {
     <div className="fixed inset-0 z-30 flex items-center justify-center p-4" style={{ background: "rgba(31,42,68,.4)" }} onClick={onClose}>
       <Card className="p-4 w-80 text-sm" onClick={(e) => e.stopPropagation()}>
         <div className="font-medium mb-1">{s?.name} さん　{fmt(req.date)}</div>
-        <div className="mb-3"><Tag s={slotStyle(req)}>{slotText(req)}</Tag></div>
+        <div className="mb-3 flex items-center gap-2"><Tag s={slotStyle(req)}>{slotText(req)}</Tag>
+          <span className="text-xs opacity-70">{log ? "個別に修正済み" : auto ? "この日の営業時間から計算" : ""}</span>
+        </div>
         <label className="flex items-center justify-between gap-2 mb-2">始業<input type="time" value={v.start} onChange={(e) => setV({ ...v, start: e.target.value })} className="border rounded px-1" /></label>
         <label className="flex items-center justify-between gap-2 mb-2">終業<input type="time" value={v.end} onChange={(e) => setV({ ...v, end: e.target.value })} className="border rounded px-1" /></label>
         <label className="flex items-center justify-between gap-2 mb-2">休憩（分）<input type="number" min={0} step={5} value={v.br} onChange={(e) => setV({ ...v, br: e.target.value })} className="border rounded px-1 w-20 tabular-nums" /></label>
-        <label className="flex items-center justify-between gap-2 mb-3">メモ<input value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })} className="border rounded px-1 flex-1" /></label>
+        <label className="flex items-center justify-between gap-2 mb-3">メモ<input value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })} className="border rounded px-1 flex-1" placeholder="早上がり・遅刻など" /></label>
         <div className="mb-3 text-right tabular-nums">実働 <span className="font-medium">{fmtHours(hours)} 時間</span></div>
         <div className="flex gap-2 justify-end">
-          {log && <Btn small onClick={async () => { await api.deleteWorkLog(req.id); onClose(); }}>削除</Btn>}
+          {log && <Btn small onClick={async () => { await api.deleteWorkLog(req.id); onClose(); }}>{auto ? "一括の時間に戻す" : "削除"}</Btn>}
           <Btn small onClick={onClose}>閉じる</Btn>
-          <Btn small tone="primary" onClick={save} disabled={hours <= 0}>保存</Btn>
+          <Btn small tone="primary" onClick={save} disabled={hours <= 0}>個別に保存</Btn>
         </div>
       </Card>
     </div>

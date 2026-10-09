@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase.js";
-import { covers, mkey, monthDays, DEFAULT_WINDOWS } from "./util.js";
+import { autoWork, covers, mkey, monthDays, DEFAULT_WINDOWS } from "./util.js";
 
 // 月と店舗ごとのデータをまとめて取得し、変更があれば自動で再取得する
 export function useShiftData(ym, storeId) {
@@ -69,6 +69,12 @@ export function useShiftData(ym, storeId) {
     const isRecruit = (k) => !!daySet[k]?.recruit;
     const published = raw.pubs.some((p) => p.store_id === store.id);
     const logs = Object.fromEntries(raw.logs.map((l) => [l.request_id, l]));
+    // 実働: 個別入力があればそれ、なければその日の営業時間（一括入力）から計算
+    // （全店舗表示でも使うので、希望の店舗の設定で計算する）
+    const hoursAll = Object.fromEntries(raw.daySettings.filter((d) => d.work_hours).map((d) => [`${d.store_id}|${d.date}`, d.work_hours]));
+    const dayHours = (k) => hoursAll[`${store.id}|${k}`] || null;
+    const windowsOf = (sid) => ({ ...DEFAULT_WINDOWS, ...(raw.stores.find((s) => s.id === sid)?.windows || {}) });
+    const workOf = (r) => (logs[r.id] ? { ...logs[r.id], individual: true } : autoWork(r, hoursAll[`${r.store_id}|${r.date}`], windowsOf(r.store_id)));
 
     // 枠ごとの人数と、デリバリー・厨房の有無
     const counts = {};
@@ -88,7 +94,7 @@ export function useShiftData(ym, storeId) {
         }
       }
     }
-    return { ...raw, store, windows, membership, staffInStore, requests, requestsAll, daySet, defaultType, typeOf, isHoliday, ruleFor, isRecruit, published, counts, logs };
+    return { ...raw, store, windows, membership, staffInStore, requests, requestsAll, daySet, defaultType, typeOf, isHoliday, ruleFor, isRecruit, published, counts, logs, dayHours, workOf };
   }, [raw, days, storeId]);
 
   return { data: view, days, mk, error, reload };
@@ -146,6 +152,7 @@ export const api = {
   async deleteAnnouncement(id) { check(await supabase.from("announcements").delete().eq("id", id)); },
   async markAnnouncementsRead(profileId) { check(await supabase.from("profiles").update({ announcements_read_at: new Date().toISOString() }).eq("id", profileId)); },
   // 実働時間
+  async setDayHours(storeId, date, work_hours) { check(await supabase.from("day_settings").upsert({ store_id: storeId, date, work_hours }, { onConflict: "store_id,date" })); },
   async upsertWorkLog(row) { check(await supabase.from("work_logs").upsert({ ...row, updated_at: new Date().toISOString() }, { onConflict: "request_id" })); },
   async deleteWorkLog(requestId) { check(await supabase.from("work_logs").delete().eq("request_id", requestId)); },
 };
