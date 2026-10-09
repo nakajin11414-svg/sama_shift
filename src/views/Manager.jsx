@@ -116,7 +116,7 @@ function ApproveView({ data, days, mk }) {
                 );
               })}
             </div>
-            <span className="tabular-nums opacity-70">基準 {PART_KEYS.map((p) => `${PARTS[p].short}${req[p]}`).join(" / ")}</span>
+            <span className="tabular-nums opacity-70">基準 {PART_KEYS.map((p) => `${PARTS[p].short}${req[p]}`).join(" / ")}（うち配{req.delivery}・厨{req.kitchen}）</span>
             {data.daySet[day.k]?.day_type && <span className="opacity-60">（通常は{TYPE[data.defaultType(day)].label}）</span>}
           </div>
 
@@ -420,7 +420,11 @@ function RosterView({ data, profile }) {
                 const p = data.profiles.find((x) => x.id === s.profile_id);
                 return (
                   <tr key={s.id} style={{ borderTop: "1px solid #EEF1F3" }}>
-                    <td className="py-1.5 pr-2 whitespace-nowrap">{s.name}
+                    <td className="py-1.5 pr-2 whitespace-nowrap">
+                      <input defaultValue={s.name} key={s.name} title="名前を変更（入力欄から離れると保存）"
+                        onBlur={(e) => { const n = e.target.value.trim(); if (!n) e.target.value = s.name; else if (n !== s.name) api.updateStaff(s.id, { name: n }); }}
+                        onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+                        className="border rounded px-2 py-0.5 w-32" style={{ borderColor: LINE }} />
                       <div className="text-xs opacity-60">{p ? <>LINE: {p.display_name}{p.role === "manager" && "（管理者）"}</> : <span style={{ color: "#7A4A00" }}>LINE未連携</span>}</div>
                     </td>
                     <td className="py-1.5 pr-2">
@@ -457,6 +461,7 @@ function RosterView({ data, profile }) {
             </tbody>
           </table>
         )}
+        {data.staff.length > 0 && <div className="text-xs opacity-60 mt-2">名前は欄を直接書き換えると変更できます（入力欄から離れるか Enter で保存）。</div>}
       </Card>
     </div>
   );
@@ -498,28 +503,30 @@ function StoresView({ data, days }) {
           <Card className="p-4">
             <div className="text-sm mb-3">{S.name} の基準人数</div>
             <table className="text-sm">
-              <thead><tr className="text-xs opacity-70"><th></th>{PART_KEYS.map((p) => <th key={p} className="px-2 font-normal"><Tag s={PARTS[p]}>{PARTS[p].label}</Tag></th>)}</tr></thead>
+              <thead>
+                <tr className="text-xs opacity-70">
+                  <th></th>
+                  {PART_KEYS.map((p) => <th key={p} className="px-2 font-normal"><Tag s={PARTS[p]}>{PARTS[p].label}</Tag></th>)}
+                  <th className="px-2 font-normal" style={{ borderLeft: `1px solid ${LINE}` }}>うち配達</th>
+                  <th className="px-2 font-normal">うち厨房</th>
+                </tr>
+              </thead>
               <tbody>
                 {Object.entries(TYPE).map(([g, t]) => (
                   <tr key={g}><td className="pr-2 py-1">{t.label}</td>
-                    {PART_KEYS.map((p) => (
-                      <td key={p} className="px-2 py-1 align-top">
-                        {[[p, "全体"], [`${p}_delivery`, "うち配達"], [`${p}_kitchen`, "うち厨房"]].map(([key, label]) => {
-                          const cur = rules[g]?.[key] ?? DEFAULT_RULE[key];
-                          return (
-                            <label key={key} className="flex items-center justify-end gap-1 py-0.5">
-                              <span className="text-xs opacity-70">{label}</span>
-                              <input type="number" min={0} key={`${g}${key}${cur}`} defaultValue={cur} onBlur={(e) => Number(e.target.value) !== cur && setRule(g, key, e.target.value)} className="w-14 border rounded px-1 tabular-nums" />人
-                            </label>
-                          );
-                        })}
-                      </td>
-                    ))}
+                    {[...PART_KEYS, "delivery", "kitchen"].map((key) => {
+                      const cur = rules[g]?.[key] ?? DEFAULT_RULE[key];
+                      return (
+                        <td key={key} className="px-2 py-1" style={key === "delivery" ? { borderLeft: `1px solid ${LINE}` } : undefined}>
+                          <input type="number" min={0} key={`${g}${key}${cur}`} defaultValue={cur} onBlur={(e) => Number(e.target.value) !== cur && setRule(g, key, e.target.value)} className="w-14 border rounded px-1 tabular-nums" />人
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
             </table>
-            <div className="text-xs opacity-60 mt-2">入力欄から離れると保存されます。配達・厨房は全体の人数のうち何人必要かです。配達と厨房の両方ができる人は、どちらか一方にしか数えません。</div>
+            <div className="text-xs opacity-60 mt-2">入力欄から離れると保存されます。「うち配達」「うち厨房」は、ランチ・ディナーそれぞれの人数のうち何人必要かです（仕込みは対象外）。配達と厨房の両方ができる人は、どちらか一方にしか数えません。</div>
           </Card>
           <Card className="p-4">
             <div className="text-sm mb-1">{S.name} の枠の時間帯</div>
