@@ -70,7 +70,7 @@ export const covers = (req, part, windows) => partsOf(req, windows).includes(par
 // 表示用
 const ordered = (r) => PART_KEYS.filter((p) => (r.parts || []).includes(p));
 export const slotText = (r) =>
-  r.type === "custom" ? `${hhmm(r.start_time)}〜${hhmm(r.end_time)}` : ordered(r).map((p) => PARTS[p].label).join("＋") || "？";
+  r.type === "custom" ? `${hhmm(r.start_time)}〜${hhmm(r.end_time)}` : ordered(r).map((p) => PARTS[p].label).join("＋").replace("ランチ＋ディナー", "通し") || "？";
 export const slotShort = (r) =>
   r.type === "custom" ? `${hhmm(r.start_time).slice(0, 2)}-${hhmm(r.end_time).slice(0, 2)}` : ordered(r).map((p) => PARTS[p].short).join("").replace("ラデ", "通") || "？";
 export const slotStyle = (r) => {

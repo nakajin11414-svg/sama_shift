@@ -133,7 +133,7 @@ export default function StaffView({ data, days, profile }) {
             通し
           </button>
           <Btn tone="primary" disabled={!sel.size || busy || !parts.size} onClick={() => apply("parts")}>この枠で登録</Btn>
-          <span className="text-xs opacity-60">通し＝ランチ＋ディナー。複数選ぶと組み合わせ（例: 仕込み＋ランチ）</span>
+          <span className="text-xs opacity-60">仕込みと組み合わせることもできます（例: 仕込み＋ランチ、仕込み＋通し）</span>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
           <span className="flex items-center gap-1 text-sm">
