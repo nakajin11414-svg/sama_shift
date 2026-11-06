@@ -79,11 +79,11 @@ export function useShiftData(ym, storeId) {
       return w && logs[r.id] ? { ...w, individual: true } : w;
     };
 
-    // 枠ごとの人数と、承認済みの中のデリバリーだけ・厨房だけ・両方できる人の数
+    // 枠ごとの人数と、承認済みの中のデリバリーだけ・厨房だけ・両方できる人・仕込みができる人の数
     const counts = {};
     for (const day of days) {
       const c = counts[day.k] = {};
-      for (const p of ["prep", "lunch", "dinner"]) c[p] = { n: 0, pending: 0, onlyDelivery: 0, onlyKitchen: 0, both: 0 };
+      for (const p of ["prep", "lunch", "dinner"]) c[p] = { n: 0, pending: 0, onlyDelivery: 0, onlyKitchen: 0, both: 0, prepper: 0 };
       for (const s of staffInStore) {
         const r = requests[s.id]?.[day.k];
         if (!r || r.status === "rejected") continue;
@@ -94,6 +94,7 @@ export function useShiftData(ym, storeId) {
             if (s.can_delivery && s.can_kitchen) c[p].both++;
             else if (s.can_delivery) c[p].onlyDelivery++;
             else if (s.can_kitchen) c[p].onlyKitchen++;
+            if (s.can_prep) c[p].prepper++;
           } else c[p].pending++;
         }
       }

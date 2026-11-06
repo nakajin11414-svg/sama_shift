@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { WD, PARTS, PART_KEYS, NAVY, LINE, fmt, slotText, slotShort, slotStyle, covers, dayColor, workHours, fmtHours } from "../lib/util.js";
+import { WD, PARTS, PART_KEYS, NAVY, LINE, fmt, skillShort, slotText, slotShort, slotStyle, covers, dayColor, workHours, fmtHours } from "../lib/util.js";
 import { Btn, Card, Tag } from "../ui.jsx";
 
 export default function PublishedView({ data, days, mk, profile, isManager }) {
@@ -134,7 +134,7 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
                     <div key={p} className="mb-3">
                       <div className="flex items-center gap-2 mb-1"><Tag s={PARTS[p]}>{PARTS[p].label}</Tag><span className="text-xs tabular-nums opacity-70">{list.length}/{need}人</span></div>
                       {list.length === 0 ? <div className="text-xs opacity-50 pl-1">なし</div>
-                        : <ul className="pl-1">{list.map(({ s, r }) => <li key={s.id} className="py-0.5 flex gap-2"><span>{s.name}</span><span className="text-xs opacity-60 self-center">{s.can_delivery && "配"}{s.can_kitchen && "厨"}</span>{r.type === "custom" && <span className="text-xs opacity-60 self-center">{slotText(r)}</span>}</li>)}</ul>}
+                        : <ul className="pl-1">{list.map(({ s, r }) => <li key={s.id} className="py-0.5 flex gap-2"><span>{s.name}</span><span className="text-xs opacity-60 self-center">{skillShort(s)}</span>{r.type === "custom" && <span className="text-xs opacity-60 self-center">{slotText(r)}</span>}</li>)}</ul>}
                     </div>
                   );
                 })}

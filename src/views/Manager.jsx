@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/data.js";
-import { WD, PARTS, PART_KEYS, STATUS, TYPE, SKILLS, NAVY, LINE, RED, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, slotText, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm } from "../lib/util.js";
+import { WD, PARTS, PART_KEYS, STATUS, TYPE, SKILLS, skillShort, NAVY, LINE, RED, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, slotText, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm } from "../lib/util.js";
 import { Btn, Card, Tag, Gauge } from "../ui.jsx";
 
 export default function ManagerView(props) {
@@ -24,7 +24,7 @@ export default function ManagerView(props) {
   );
 }
 
-// 枠ごとの人数ゲージ＋デリバリー・厨房の警告
+// 枠ごとの人数ゲージ＋デリバリー・厨房・仕込みの警告
 function PartGauge({ c, rule, part, compact }) {
   const sh = skillShortage(c, rule, part);
   const warn = c.n > 0 && sh.any;
@@ -32,8 +32,8 @@ function PartGauge({ c, rule, part, compact }) {
     <span className="inline-flex items-center gap-0.5">
       <Gauge n={c.n} p={c.pending} need={rule[part]} />
       {warn && !compact && (
-        <span className="text-xs" style={{ color: RED }} title="承認済みの人だけでは、デリバリー・厨房の必要人数に足りません（両方できる人はどちらか一方に数えます）">
-          {[sh.delivery && `配-${sh.delivery}`, sh.kitchen && `厨-${sh.kitchen}`, sh.either && `配か厨-${sh.either}`].filter(Boolean).join(" ")}
+        <span className="text-xs" style={{ color: RED }} title="承認済みの人だけでは、デリバリー・厨房・仕込みの必要人数に足りません（配達と厨房の両方ができる人はどちらか一方に数えます）">
+          {[sh.delivery && `配達-${sh.delivery}`, sh.kitchen && `厨房-${sh.kitchen}`, sh.either && `配達か厨房-${sh.either}`, sh.prepper && `仕込み-${sh.prepper}`].filter(Boolean).join(" ")}
         </span>
       )}
       {warn && compact && <span className="text-xs" style={{ color: RED }}>!</span>}
@@ -116,7 +116,7 @@ function ApproveView({ data, days, mk }) {
                 );
               })}
             </div>
-            <span className="tabular-nums opacity-70">基準 {PART_KEYS.map((p) => `${PARTS[p].short}${req[p]}`).join(" / ")}（うち配{req.delivery}・厨{req.kitchen}）</span>
+            <span className="tabular-nums opacity-70">基準 {PART_KEYS.map((p) => `${PARTS[p].short}${req[p]}`).join(" / ")}（うち配達{req.delivery}・厨房{req.kitchen}・仕込み{req.prepper}）</span>
             {data.daySet[day.k]?.day_type && <span className="opacity-60">（通常は{TYPE[data.defaultType(day)].label}）</span>}
           </div>
 
@@ -127,7 +127,7 @@ function ApproveView({ data, days, mk }) {
                 return (
                   <li key={s.id} className="flex flex-wrap items-center gap-2 py-2 text-sm" style={{ opacity: r.status === "rejected" ? 0.6 : 1 }}>
                     <span className="w-24 truncate">{s.name}
-                      <span className="ml-1 text-xs opacity-60">{s.can_delivery && SKILLS.can_delivery.short}{s.can_kitchen && SKILLS.can_kitchen.short}</span>
+                      <span className="ml-1 text-xs opacity-60">{skillShort(s)}</span>
                     </span>
                     <Tag s={slotStyle(r)}>{slotText(r)}</Tag>
                     <Tag s={STATUS[r.status]}>{STATUS[r.status].label}</Tag>
@@ -509,12 +509,13 @@ function StoresView({ data, days }) {
                   {PART_KEYS.map((p) => <th key={p} className="px-2 font-normal"><Tag s={PARTS[p]}>{PARTS[p].label}</Tag></th>)}
                   <th className="px-2 font-normal" style={{ borderLeft: `1px solid ${LINE}` }}>うち配達</th>
                   <th className="px-2 font-normal">うち厨房</th>
+                  <th className="px-2 font-normal">うち仕込み</th>
                 </tr>
               </thead>
               <tbody>
                 {Object.entries(TYPE).map(([g, t]) => (
                   <tr key={g}><td className="pr-2 py-1">{t.label}</td>
-                    {[...PART_KEYS, "delivery", "kitchen"].map((key) => {
+                    {[...PART_KEYS, "delivery", "kitchen", "prepper"].map((key) => {
                       const cur = rules[g]?.[key] ?? DEFAULT_RULE[key];
                       return (
                         <td key={key} className="px-2 py-1" style={key === "delivery" ? { borderLeft: `1px solid ${LINE}` } : undefined}>
@@ -526,7 +527,7 @@ function StoresView({ data, days }) {
                 ))}
               </tbody>
             </table>
-            <div className="text-xs opacity-60 mt-2">入力欄から離れると保存されます。「うち配達」「うち厨房」は、ランチ・ディナーそれぞれの人数のうち何人必要かです（仕込みは対象外）。配達と厨房の両方ができる人は、どちらか一方にしか数えません。</div>
+            <div className="text-xs opacity-60 mt-2">入力欄から離れると保存されます。「うち配達」「うち厨房」は、ランチ・ディナーそれぞれの人数のうち何人必要かです。「うち仕込み」は、仕込みの枠に仕込みができる人が何人必要かです。配達と厨房の両方ができる人は、どちらか一方にしか数えません。</div>
           </Card>
           <Card className="p-4">
             <div className="text-sm mb-1">{S.name} の枠の時間帯</div>

@@ -24,14 +24,18 @@ export const TYPE = {
 export const SKILLS = {
   can_delivery: { label: "デリバリー", short: "配" },
   can_kitchen: { label: "厨房", short: "厨" },
+  can_prep: { label: "仕込み", short: "仕" },
+  can_mid: { label: "中堅", short: "中" },
+  can_hall: { label: "ホール", short: "ホ" },
 };
+export const skillShort = (s) => Object.entries(SKILLS).filter(([k]) => s[k]).map(([, sk]) => sk.short).join("");
 export const DEFAULT_WINDOWS = { prep: [9, 11], lunch: [11, 15], dinner: [17, 22] };
-// 基準人数の初期値（delivery / kitchen はランチ・ディナーそれぞれに必要なデリバリー・厨房の人数。仕込みは不要）
-export const DEFAULT_RULE = { prep: 0, lunch: 0, dinner: 0, delivery: 1, kitchen: 1 };
+// 基準人数の初期値（delivery / kitchen はランチ・ディナーそれぞれに必要なデリバリー・厨房の人数。prepper は仕込みの枠に必要な仕込みができる人の数）
+export const DEFAULT_RULE = { prep: 0, lunch: 0, dinner: 0, delivery: 1, kitchen: 1, prepper: 1 };
 export const SKILL_PARTS = ["lunch", "dinner"];
 
 // デリバリー・厨房の不足。両方できる人は、どちらか一方にしか数えない
-// 戻り値: { delivery, kitchen, either }（either = 両方できる人が足りず、どちらかがあと何人足りないか）
+// 戻り値: { delivery, kitchen, either, prepper }（either = 両方できる人が足りず、どちらかがあと何人足りないか）
 export function skillShortage(c, rule, part) {
   const on = SKILL_PARTS.includes(part);
   const d = on ? rule.delivery || 0 : 0, k = on ? rule.kitchen || 0 : 0;
@@ -39,7 +43,8 @@ export function skillShortage(c, rule, part) {
   const kitchen = Math.max(0, k - c.onlyKitchen - c.both);
   const total = Math.max(0, Math.max(0, d - c.onlyDelivery) + Math.max(0, k - c.onlyKitchen) - c.both);
   const either = Math.max(0, total - delivery - kitchen);
-  return { delivery, kitchen, either, any: delivery + kitchen + either > 0 };
+  const prepper = part === "prep" ? Math.max(0, (rule.prepper || 0) - c.prepper) : 0;
+  return { delivery, kitchen, either, prepper, any: delivery + kitchen + either + prepper > 0 };
 }
 
 export const pad = (n) => String(n).padStart(2, "0");
