@@ -79,7 +79,7 @@ export default function StaffView({ data, days, profile }) {
           <select value={me.id} onChange={(e) => { setTargetId(e.target.value); setSel(new Set()); }} className="px-2 py-1 rounded border bg-white" style={{ borderColor: "#B8C2CC" }}>
             {data.staffInStore.map((s) => <option key={s.id} value={s.id}>{s.name}{s.id === myRow?.id ? "（自分）" : ""}</option>)}
           </select>
-          <span className="text-xs opacity-70">管理者が入れた希望はそのまま承認済みになります</span>
+          <span className="text-xs opacity-70">管理者が入れた希望はそのまま出勤になります</span>
         </div>
       )}
       <div className="flex flex-wrap gap-2 mb-2 text-sm items-center">
@@ -117,7 +117,7 @@ export default function StaffView({ data, days, profile }) {
           );
         })}
       </div>
-      <div className="mt-1 text-xs opacity-70">✓ 承認済み ／ ✕ 今回は入れません ／ 印なし 確認待ち ／ 他店 = 別店舗に希望あり</div>
+      <div className="mt-1 text-xs opacity-70">✓ 出勤 ／ ✕ 休み ／ 印なし 確認待ち ／ 他店 = 別店舗に希望あり</div>
 
       <Card className="mt-4 p-4">
         <div className="text-sm mb-2">{sel.size ? `選択中の ${sel.size} 日に入れる枠` : "日付を選んでください"}</div>

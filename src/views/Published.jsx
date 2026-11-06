@@ -83,7 +83,7 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
               </tr>
             </thead>
             <tbody>
-              {staff.length === 0 && <tr><td colSpan={days.length + 1} className="px-3 py-6 text-sm opacity-60">承認済みのシフトがありません。</td></tr>}
+              {staff.length === 0 && <tr><td colSpan={days.length + 1} className="px-3 py-6 text-sm opacity-60">出勤の人がいません。</td></tr>}
               {staff.map((s) => {
                 const on = focus?.kind === "staff" && focus.s.id === s.id;
                 return (

@@ -6,7 +6,7 @@ import { Btn, Card, Tag, Gauge } from "../ui.jsx";
 export default function ManagerView(props) {
   const [tab, setTab] = useState("approve");
   const pending = props.data.profiles.filter((p) => p.role === "pending").length;
-  const tabs = [["approve", "日程ごとの承認"], ["worklog", "実働時間"], ["roster", `スタッフ名簿${pending ? `（登録待ち ${pending}）` : ""}`], ["stores", "店舗・基準人数"]];
+  const tabs = [["approve", "日程ごとの出勤"], ["worklog", "実働時間"], ["roster", `スタッフ名簿${pending ? `（登録待ち ${pending}）` : ""}`], ["stores", "店舗・基準人数"]];
   return (
     <div className="p-4 max-w-6xl mx-auto">
       <div className="flex flex-wrap gap-1 mb-4 text-sm">
@@ -32,7 +32,7 @@ function PartGauge({ c, rule, part, compact }) {
     <span className="inline-flex items-center gap-0.5">
       <Gauge n={c.n} p={c.pending} need={rule[part]} />
       {warn && !compact && (
-        <span className="text-xs" style={{ color: RED }} title="承認済みの人だけでは、デリバリー・厨房・仕込みの必要人数に足りません（配達と厨房の両方ができる人はどちらか一方に数えます）">
+        <span className="text-xs" style={{ color: RED }} title="出勤の人だけでは、デリバリー・厨房・仕込みの必要人数に足りません（配達と厨房の両方ができる人はどちらか一方に数えます）">
           {[sh.delivery && `配達-${sh.delivery}`, sh.kitchen && `厨房-${sh.kitchen}`, sh.either && `配達か厨房-${sh.either}`, sh.prepper && `仕込み-${sh.prepper}`].filter(Boolean).join(" ")}
         </span>
       )}
@@ -41,7 +41,7 @@ function PartGauge({ c, rule, part, compact }) {
   );
 }
 
-// ---------- 日程ごとの承認 ----------
+// ---------- 日程ごとの出勤 ----------
 function ApproveView({ data, days, mk }) {
   const [sel, setSel] = useState(days[0].k);
   useEffect(() => { if (!days.find((d) => d.k === sel)) setSel(days[0].k); }, [days, sel]);
@@ -58,8 +58,8 @@ function ApproveView({ data, days, mk }) {
   return (
     <div>
       <Card className="flex flex-wrap items-center gap-3 px-4 py-3 mb-4 text-sm">
-        <span>{S.name}：承認済みの人数が各日の基準に揃ったら公開してください。</span>
-        {pendingTotal > 0 && <span className="text-xs opacity-70">未承認 {pendingTotal} 件</span>}
+        <span>{S.name}：出勤の人数が各日の基準に揃ったら公開してください。</span>
+        {pendingTotal > 0 && <span className="text-xs opacity-70">未定 {pendingTotal} 件</span>}
         <span className="ml-auto" />
         <Btn tone={data.published ? "ghost" : "primary"} onClick={() => api.setPublished(S.id, mk, !data.published)}>
           {data.published ? "公開を取り下げる" : `${mk.replace("-", "年")}月分を公開する`}
@@ -93,7 +93,7 @@ function ApproveView({ data, days, mk }) {
               </div>
             );
           })}
-          <div className="px-3 py-2 text-xs opacity-70">「承認済み/基準 +未承認」。赤＝多い、黄＝足りない。「!」＝デリバリー・厨房の必要人数に足りない（両方できる人はどちらか一方に数えます）。</div>
+          <div className="px-3 py-2 text-xs opacity-70">「出勤/基準 +未定」。赤＝多い、黄＝足りない。「!」＝デリバリー・厨房の必要人数に足りない（両方できる人はどちらか一方に数えます）。</div>
         </Card>
 
         <Card className="flex-1 min-w-80 p-4 sticky top-4">
@@ -133,8 +133,8 @@ function ApproveView({ data, days, mk }) {
                     <Tag s={STATUS[r.status]}>{STATUS[r.status].label}</Tag>
                     {ot.length > 0 && <span className="text-xs" style={{ color: "#7A4A00" }} title={ot.map((x) => `${data.stores.find((st) => st.id === x.store_id)?.name}: ${slotText(x)}`).join("、")}>他店も</span>}
                     <span className="ml-auto flex gap-1">
-                      {r.status !== "approved" && <Btn small tone="primary" onClick={() => api.setStatus(r.id, "approved")}>承認</Btn>}
-                      {r.status !== "rejected" && <Btn small tone="danger" onClick={() => api.setStatus(r.id, "rejected")}>拒否</Btn>}
+                      {r.status !== "approved" && <Btn small tone="primary" onClick={() => api.setStatus(r.id, "approved")}>出勤</Btn>}
+                      {r.status !== "rejected" && <Btn small tone="danger" onClick={() => api.setStatus(r.id, "rejected")}>休み</Btn>}
                       {r.status !== "pending" && <Btn small onClick={() => api.setStatus(r.id, "pending")}>戻す</Btn>}
                     </span>
                   </li>
@@ -144,7 +144,7 @@ function ApproveView({ data, days, mk }) {
           )}
           {rows.some((x) => x.r.status === "pending") && (
             <div className="mt-3 flex justify-end">
-              <Btn small onClick={() => rows.filter((x) => x.r.status === "pending").forEach((x) => api.setStatus(x.r.id, "approved"))}>未承認をすべて承認</Btn>
+              <Btn small onClick={() => rows.filter((x) => x.r.status === "pending").forEach((x) => api.setStatus(x.r.id, "approved"))}>未定をすべて出勤</Btn>
             </div>
           )}
         </Card>
@@ -197,7 +197,7 @@ function WorkLogView({ data, days, mk }) {
             </tr>
           </thead>
           <tbody>
-            {staff.length === 0 && <tr><td colSpan={days.length + 4} className="px-3 py-6 text-sm opacity-60">承認済みのシフトがありません。</td></tr>}
+            {staff.length === 0 && <tr><td colSpan={days.length + 4} className="px-3 py-6 text-sm opacity-60">出勤の人がいません。</td></tr>}
             {staff.map((s) => (
               <tr key={s.id}>
                 <td className="sticky left-0 z-10 bg-white px-3 py-1.5 text-sm whitespace-nowrap" style={{ borderRight: `2px solid ${NAVY}`, borderBottom: "1px solid #EEF1F3" }}>{s.name}</td>
@@ -322,7 +322,7 @@ function DayWorkEditor({ data, day, rows, onClose }) {
         ))}
 
         <div className="mt-3 mb-1 text-xs opacity-70">この日働いた人（早上がり・遅刻は始業・終業を直すと個別扱いになります）</div>
-        {rows.length === 0 ? <div className="text-xs opacity-60 mb-3">承認済みのシフトがありません。</div> : (
+        {rows.length === 0 ? <div className="text-xs opacity-60 mb-3">出勤の人がいません。</div> : (
           <ul className="mb-3 text-xs divide-y" style={{ borderTop: `1px solid ${LINE}`, borderColor: "#EEF1F3" }}>
             {rows.map(({ s, r }) => {
               const w = workOf(r);
@@ -542,7 +542,7 @@ function StoresView({ data, days }) {
           </Card>
           <Card className="p-4 text-sm">
             <div className="mb-2">{S.name} のこの月のイベント日</div>
-            {ev.length === 0 ? <div className="opacity-60 text-xs">「日程ごとの承認」で日付を選び、区分を「イベント」にすると登録されます。</div>
+            {ev.length === 0 ? <div className="opacity-60 text-xs">「日程ごとの出勤」で日付を選び、区分を「イベント」にすると登録されます。</div>
               : <ul>{ev.map((d) => <li key={d.k} className="tabular-nums py-0.5">{fmt(d.k)}</li>)}</ul>}
           </Card>
         </>

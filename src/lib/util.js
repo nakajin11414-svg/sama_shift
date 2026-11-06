@@ -12,9 +12,9 @@ export const PARTS = {
 export const PART_KEYS = ["prep", "lunch", "dinner"];
 export const CUSTOM = { label: "時間指定", short: "他", bg: "#CFD8DE", fg: "#1F2A44" };
 export const STATUS = {
-  pending: { label: "未承認", bg: "#EEF1F3", fg: "#5A6B7A" },
-  approved: { label: "承認", bg: "#CFE8D8", fg: "#0F3A24" },
-  rejected: { label: "不可", bg: "#F7E4E4", fg: "#7A1E1E" },
+  pending: { label: "未定", bg: "#EEF1F3", fg: "#5A6B7A" },
+  approved: { label: "出勤", bg: "#CFE8D8", fg: "#0F3A24" },
+  rejected: { label: "休み", bg: "#F7E4E4", fg: "#7A1E1E" },
 };
 export const TYPE = {
   weekday: { label: "平日", fg: NAVY },

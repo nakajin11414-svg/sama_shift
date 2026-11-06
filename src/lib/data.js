@@ -79,7 +79,7 @@ export function useShiftData(ym, storeId) {
       return w && logs[r.id] ? { ...w, individual: true } : w;
     };
 
-    // 枠ごとの人数と、承認済みの中のデリバリーだけ・厨房だけ・両方できる人・仕込みができる人の数
+    // 枠ごとの人数と、出勤の中のデリバリーだけ・厨房だけ・両方できる人・仕込みができる人の数
     const counts = {};
     for (const day of days) {
       const c = counts[day.k] = {};
