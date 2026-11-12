@@ -133,6 +133,7 @@ export const api = {
       parts: type === "parts" ? parts : [],
       start_time: type === "custom" ? start : null,
       end_time: type === "custom" ? end : null,
+      desired: null, // 入れ直したら元の希望の記録は消す
       ...(status ? { status } : {}),
     }));
     check(await supabase.from("requests").upsert(rows, { onConflict: "staff_id,date,store_id" }));
@@ -141,6 +142,15 @@ export const api = {
     check(await supabase.from("requests").delete().eq("staff_id", staffId).eq("store_id", storeId).in("date", dates));
   },
   async setStatus(id, status) { check(await supabase.from("requests").update({ status }).eq("id", id)); },
+  // 管理者が枠・時間を変えて出勤にする。元の希望は desired に残す（最初に変えたときだけ）
+  async approveAs(r, slot) {
+    const desired = r.desired || { type: r.type, parts: r.parts, start_time: r.start_time, end_time: r.end_time };
+    check(await supabase.from("requests").update({ ...slot, status: "approved", desired }).eq("id", r.id));
+  },
+  // 戻す: 枠を変えていたら元の希望に戻して未定にする
+  async resetRequest(r) {
+    check(await supabase.from("requests").update(r.desired ? { ...r.desired, desired: null, status: "pending" } : { status: "pending" }).eq("id", r.id));
+  },
   // 日ごとの設定・公開
   async setDayType(storeId, date, day_type) { check(await supabase.from("day_settings").upsert({ store_id: storeId, date, day_type }, { onConflict: "store_id,date" })); },
   // 締切（null で解除）
@@ -169,7 +179,7 @@ export const api = {
     } else {
       check(await supabase.from("requests").upsert({
         staff_id: c.staff_id, store_id: c.store_id, date: c.date, type: c.type, parts: c.parts,
-        start_time: c.start_time, end_time: c.end_time, status: "approved",
+        start_time: c.start_time, end_time: c.end_time, status: "approved", desired: null,
       }, { onConflict: "staff_id,date,store_id" }));
     }
     check(await supabase.from("change_requests").update({ status: "approved", decided_at: new Date().toISOString() }).eq("id", c.id));

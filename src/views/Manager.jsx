@@ -88,7 +88,44 @@ function EmployeeDaysOff({ data, days, mk }) {
 }
 
 // ---------- シフト管理 ----------
+// 管理者が出勤の枠を選ぶ（仕込み・ランチ・ディナーの組み合わせ、または時間指定）
+function SlotEditor({ r, windows, onDone }) {
+  const t = (h) => `${pad(Math.floor(h))}:${pad(Math.round((h % 1) * 60))}`;
+  const [mode, setMode] = useState(r.type === "custom" ? "custom" : "parts");
+  const [parts, setParts] = useState(new Set(r.type === "custom" ? [] : r.parts));
+  const [start, setStart] = useState(r.type === "custom" ? hhmm(r.start_time) : t(windows.lunch[0]));
+  const [end, setEnd] = useState(r.type === "custom" ? hhmm(r.end_time) : t(windows.lunch[1]));
+  const [busy, setBusy] = useState(false);
+  const toggle = (p) => setParts((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; });
+  const save = async () => {
+    if (mode === "parts" && !parts.size) return alert("枠を1つ以上選んでください");
+    if (mode === "custom" && end <= start) return alert("終了は開始より後にしてください");
+    const slot = mode === "parts"
+      ? { type: "parts", parts: PART_KEYS.filter((p) => parts.has(p)), start_time: null, end_time: null }
+      : { type: "custom", parts: [], start_time: start, end_time: end };
+    setBusy(true);
+    try { await api.approveAs(r, slot); onDone(); } finally { setBusy(false); }
+  };
+  const off = { background: "#fff", color: NAVY, border: `1px solid ${LINE}` };
+  return (
+    <div className="w-full mt-1 p-2 rounded text-xs flex flex-wrap items-center gap-2" style={{ background: "#F4F6F8" }}>
+      {PART_KEYS.map((p) => (
+        <button key={p} onClick={() => { setMode("parts"); toggle(p); }} className="px-2.5 py-1 rounded"
+          style={mode === "parts" && parts.has(p) ? { background: PARTS[p].bg, color: PARTS[p].fg, outline: `2px solid ${NAVY}` } : off}>{PARTS[p].label}</button>
+      ))}
+      <span className="opacity-50">または</span>
+      <button onClick={() => setMode("custom")} className="px-2.5 py-1 rounded" style={mode === "custom" ? { background: NAVY, color: "#fff" } : off}>時間指定</button>
+      {mode === "custom" && <span className="flex items-center gap-1"><TimeSelect value={start} onChange={setStart} />〜<TimeSelect value={end} onChange={setEnd} /></span>}
+      <span className="ml-auto flex gap-1">
+        <Btn small tone="primary" disabled={busy} onClick={save}>この内容で出勤</Btn>
+        <Btn small onClick={onDone}>やめる</Btn>
+      </span>
+    </div>
+  );
+}
+
 function ApproveView({ data, days, mk }) {
+  const [editing, setEditing] = useState(null); // 枠を変えて出勤にする希望のid
   const [sel, setSel] = useState(days[0].k);
   useEffect(() => { if (!days.find((d) => d.k === sel)) setSel(days[0].k); }, [days, sel]);
   const S = data.store;
@@ -203,12 +240,15 @@ function ApproveView({ data, days, mk }) {
                     </span>
                     <Tag s={slotStyle(r)}>{slotText(r)}</Tag>
                     <Tag s={STATUS[r.status]}>{STATUS[r.status].label}</Tag>
+                    {r.desired && <span className="text-xs opacity-60">（希望: {slotText(r.desired)}）</span>}
                     {ot.length > 0 && <span className="text-xs" style={{ color: "#7A4A00" }} title={ot.map((x) => `${data.stores.find((st) => st.id === x.store_id)?.name}: ${slotText(x)}`).join("、")}>他店も</span>}
                     <span className="ml-auto flex gap-1">
-                      {r.status !== "approved" && <Btn small tone="primary" onClick={() => api.setStatus(r.id, "approved")}>出勤</Btn>}
+                      {r.status !== "approved" && <Btn small tone="primary" onClick={() => api.setStatus(r.id, "approved")}>希望どおり出勤</Btn>}
+                      <Btn small onClick={() => setEditing(editing === r.id ? null : r.id)}>{r.status === "approved" ? "枠を変更" : "枠を変えて出勤"}</Btn>
                       {r.status !== "rejected" && <Btn small tone="danger" onClick={() => api.setStatus(r.id, "rejected")}>休み</Btn>}
-                      {r.status !== "pending" && <Btn small onClick={() => api.setStatus(r.id, "pending")}>戻す</Btn>}
+                      {r.status !== "pending" && <Btn small onClick={() => api.resetRequest(r)} title={r.desired ? "元の希望に戻して未定にする" : "未定に戻す"}>戻す</Btn>}
                     </span>
+                    {editing === r.id && <SlotEditor r={r} windows={data.windows} onDone={() => setEditing(null)} />}
                   </li>
                 );
               })}
