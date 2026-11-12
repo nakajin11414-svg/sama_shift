@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/data.js";
-import { WD, PARTS, PART_KEYS, STATUS, CHANGE_STATUS, TYPE, SKILLS, POSITIONS, skillShort, NAVY, LINE, RED, CLOSED_BG, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, DEFAULT_WINDOWS, slotText, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm } from "../lib/util.js";
+import { WD, PARTS, PART_KEYS, STATUS, CHANGE_STATUS, OFFICE, canOffice, isPartTime, TYPE, SKILLS, POSITIONS, skillShort, NAVY, LINE, RED, CLOSED_BG, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, DEFAULT_WINDOWS, slotText, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm } from "../lib/util.js";
 import { Btn, Card, Tag, Gauge } from "../ui.jsx";
 
 export default function ManagerView(props) {
@@ -120,11 +120,12 @@ function slotChoices(orig, windows) {
   return { allowed, segments };
 }
 
-function SlotEditor({ r, windows, onDone }) {
+function SlotEditor({ r, windows, office, onDone }) {
   const orig = r.desired || r; // スタッフの元の希望
   const { allowed, segments } = slotChoices(orig, windows);
-  // mode: "parts"（枠を選ぶ）か "custom"（時間指定）
-  const [mode, setMode] = useState(r.type === "custom" || !allowed.length ? "custom" : "parts");
+  const officeWish = orig.type === "office"; // 事務の希望なら事務だけ
+  // mode: "parts"（枠を選ぶ）／ "custom"（時間指定）／ "office"（事務。運営・社員のみ）
+  const [mode, setMode] = useState(r.type === "office" || officeWish ? "office" : r.type === "custom" || !allowed.length ? "custom" : "parts");
   const [parts, setParts] = useState(() => new Set(r.type === "custom" ? [] : (r.parts || []).filter((p) => allowed.includes(p))));
   const togglePart = (p) => { setMode("parts"); setParts((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; }); };
   const points = (seg) => {
@@ -144,6 +145,7 @@ function SlotEditor({ r, windows, onDone }) {
   const save = async () => {
     if (mode === "parts" && !parts.size) return alert("枠を1つ以上選んでください");
     const slot = mode === "parts" ? { type: "parts", parts: PART_KEYS.filter((p) => parts.has(p)), start_time: null, end_time: null }
+      : mode === "office" ? { type: "office", parts: [], start_time: null, end_time: null }
       : { type: "custom", parts: [], start_time: fromMin(start), end_time: fromMin(end) };
     setBusy(true);
     try { await api.approveAs(r, slot); onDone(); } finally { setBusy(false); }
@@ -153,10 +155,11 @@ function SlotEditor({ r, windows, onDone }) {
   return (
     <div className="w-full mt-1 p-2 rounded text-xs flex flex-wrap items-center gap-2" style={{ background: "#F4F6F8" }}>
       <span className="opacity-70">出勤の枠</span>
-      {allowed.map((p) => (
+      {!officeWish && allowed.map((p) => (
         <button key={p} onClick={() => togglePart(p)} className="px-2.5 py-1 rounded" style={chip(mode === "parts" && parts.has(p), PARTS[p])}>{PARTS[p].label}</button>
       ))}
-      <button onClick={() => setMode("custom")} className="px-2.5 py-1 rounded" style={chip(mode === "custom")}>時間指定</button>
+      {!officeWish && <button onClick={() => setMode("custom")} className="px-2.5 py-1 rounded" style={chip(mode === "custom")}>時間指定</button>}
+      {(office || officeWish) && <button onClick={() => setMode("office")} className="px-2.5 py-1 rounded" style={chip(mode === "office", OFFICE)}>{OFFICE.label}</button>}
       {mode === "parts" && parts.size > 1 && <span className="opacity-60">→ {slotText({ type: "parts", parts: [...parts] })}</span>}
       {mode === "custom" && (
         <span className="flex items-center gap-1">
@@ -168,7 +171,7 @@ function SlotEditor({ r, windows, onDone }) {
         <Btn small tone="primary" disabled={busy} onClick={save}>この内容で出勤</Btn>
         <Btn small onClick={onDone}>やめる</Btn>
       </span>
-      <div className="w-full opacity-60">希望（{slotText(orig)}）の範囲内で選べます</div>
+      <div className="w-full opacity-60">希望（{slotText(orig)}）の範囲内で選べます{office && !officeWish && "。運営・社員は「事務」（出勤日に数えるが、各枠の人数には数えない）も選べます"}</div>
     </div>
   );
 }
@@ -296,7 +299,7 @@ function ApproveView({ data, days, mk }) {
                       {r.status !== "rejected" && <Btn small tone="danger" onClick={() => api.setStatus(r.id, "rejected")}>休み</Btn>}
                       {r.status !== "pending" && <Btn small onClick={() => api.resetRequest(r)} title={r.desired ? "元の希望に戻して未定にする" : "未定に戻す"}>戻す</Btn>}
                     </span>
-                    {editing === r.id && <SlotEditor r={r} windows={data.windows} onDone={() => setEditing(null)} />}
+                    {editing === r.id && <SlotEditor r={r} windows={data.windows} office={canOffice(s)} onDone={() => setEditing(null)} />}
                   </li>
                 );
               })}
@@ -377,7 +380,7 @@ function WorkLogView({ data, days, mk }) {
   const [dayEdit, setDayEdit] = useState(null); // day
   const S = data.store;
   const approved = (sid, k) => { const r = data.requests[sid]?.[k]; return r && r.status === "approved" ? r : null; };
-  const staff = data.staffInStore.filter((s) => days.some((d) => approved(s.id, d.k)));
+  const staff = data.staffInStore.filter((s) => isPartTime(s) && days.some((d) => approved(s.id, d.k))); // 実働時間はアルバイトだけ
   const hoursOf = (r) => (r ? workHours(data.workOf(r)) : 0);
   const total = (s) => days.reduce((a, d) => a + hoursOf(approved(s.id, d.k)), 0);
   const deliveries = (s, role) => days.filter((d) => data.daySet[d.k]?.delivery?.[role] === s.id).length;
@@ -538,10 +541,10 @@ function DayWorkEditor({ data, day, rows, onClose }) {
           </div>
         ))}
 
-        <div className="mt-3 mb-1 text-xs opacity-70">この日働いた人（早上がり・遅刻は始業・終業を直すと個別扱いになります）</div>
-        {rows.length === 0 ? <div className="text-xs opacity-60 mb-3">出勤の人がいません。</div> : (
+        <div className="mt-3 mb-1 text-xs opacity-70">この日働いたアルバイト（早上がり・遅刻は始業・終業を直すと個別扱いになります）</div>
+        {rows.filter(({ s }) => isPartTime(s)).length === 0 ? <div className="text-xs opacity-60 mb-3">出勤のアルバイトがいません。</div> : (
           <ul className="mb-3 text-xs divide-y" style={{ borderTop: `1px solid ${LINE}`, borderColor: "#EEF1F3" }}>
-            {rows.map(({ s, r }) => {
+            {rows.filter(({ s }) => isPartTime(s)).map(({ s, r }) => {
               const w = workOf(r);
               return (
                 <li key={s.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1.5">

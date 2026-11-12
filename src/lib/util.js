@@ -12,6 +12,12 @@ export const PARTS = {
 };
 export const PART_KEYS = ["prep", "lunch", "dinner"];
 export const CUSTOM = { label: "時間指定", short: "他", bg: "#CFD8DE", fg: "#1F2A44" };
+// 事務日（運営・社員のみ）。出勤日に数えるが、仕込み・ランチ・ディナーの人数には数えない
+export const OFFICE = { label: "事務", short: "事", bg: "#D9D2E9", fg: "#2E2257" };
+export const OFFICE_POSITIONS = ["operation", "employee"];
+export const canOffice = (s) => OFFICE_POSITIONS.includes(s?.position);
+// 実働時間を出すのはアルバイトだけ
+export const isPartTime = (s) => (s?.position || "part_time") === "part_time";
 export const STATUS = {
   pending: { label: "未定", bg: "#EEF1F3", fg: "#5A6B7A" },
   approved: { label: "出勤", bg: "#CFE8D8", fg: "#0F3A24" },
@@ -83,10 +89,11 @@ export const covers = (req, part, windows) => partsOf(req, windows).includes(par
 // 表示用
 const ordered = (r) => PART_KEYS.filter((p) => (r.parts || []).includes(p));
 export const slotText = (r) =>
-  r.type === "custom" ? `${hhmm(r.start_time)}〜${hhmm(r.end_time)}` : ordered(r).map((p) => PARTS[p].label).join("＋").replace("ランチ＋ディナー", "通し") || "？";
+  r.type === "office" ? OFFICE.label : r.type === "custom" ? `${hhmm(r.start_time)}〜${hhmm(r.end_time)}` : ordered(r).map((p) => PARTS[p].label).join("＋").replace("ランチ＋ディナー", "通し") || "？";
 export const slotShort = (r) =>
-  r.type === "custom" ? `${hhmm(r.start_time).slice(0, 2)}-${hhmm(r.end_time).slice(0, 2)}` : ordered(r).map((p) => PARTS[p].short).join("").replace("ラデ", "通") || "？";
+  r.type === "office" ? OFFICE.short : r.type === "custom" ? `${hhmm(r.start_time).slice(0, 2)}-${hhmm(r.end_time).slice(0, 2)}` : ordered(r).map((p) => PARTS[p].short).join("").replace("ラデ", "通") || "？";
 export const slotStyle = (r) => {
+  if (r.type === "office") return OFFICE;
   if (r.type === "custom") return CUSTOM;
   const ps = ordered(r);
   if (ps.length === 1) return PARTS[ps[0]];

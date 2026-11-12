@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { WD, PARTS, PART_KEYS, NAVY, LINE, CLOSED_BG, fmt, skillShort, slotText, slotShort, slotStyle, covers, dayColor, workHours, fmtHours } from "../lib/util.js";
+import { WD, PARTS, PART_KEYS, NAVY, LINE, CLOSED_BG, OFFICE, isPartTime, fmt, skillShort, slotText, slotShort, slotStyle, covers, dayColor, workHours, fmtHours } from "../lib/util.js";
 import { Card, Tag } from "../ui.jsx";
 
 export default function PublishedView({ data, days, mk, profile, isManager }) {
@@ -95,7 +95,7 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
                     <li key={d.k} className="flex items-center gap-2 py-1.5">
                       <span className="tabular-nums w-16" style={{ color: dayColor(d, data.isHoliday(d)) }}>{fmt(d.k)}</span>
                       <Tag s={slotStyle(r)}>{slotText(r)}</Tag>
-                      {data.workOf(r) && <span className="ml-auto text-xs tabular-nums opacity-70">{fmtHours(workHours(data.workOf(r)))}h</span>}
+                      {isPartTime(focus.s) && data.workOf(r) && <span className="ml-auto text-xs tabular-nums opacity-70">{fmtHours(workHours(data.workOf(r)))}h</span>}
                     </li>
                   ))}
                 </ul>
@@ -116,6 +116,15 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
                     </div>
                   );
                 })}
+                {(() => {
+                  const office = byDate(focus.k).filter(({ r }) => r.type === "office");
+                  return office.length > 0 && (
+                    <div className="mb-3">
+                      <div className="flex items-center gap-2 mb-1"><Tag s={OFFICE}>{OFFICE.label}</Tag><span className="text-xs tabular-nums opacity-70">{office.length}人</span></div>
+                      <ul className="pl-1">{office.map(({ s }) => <li key={s.id} className="py-0.5">{s.name}</li>)}</ul>
+                    </div>
+                  );
+                })()}
               </>
             )}
           </Card>
@@ -129,6 +138,7 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
 // 自分の出勤日（公開済みの全店舗分）
 function MyShifts({ data, myRow, myAll, mk }) {
   const multi = data.stores.length > 1;
+  const pt = isPartTime(myRow); // 実働時間はアルバイトだけ
   const total = myAll.reduce((a, x) => a + workHours(data.workOf(x.r)), 0);
   return (
     <Card className="p-4 text-sm w-full max-w-xl text-left">
@@ -143,12 +153,12 @@ function MyShifts({ data, myRow, myAll, mk }) {
               <span className="tabular-nums w-16" style={{ color: dayColor(d, data.isHoliday(d)) }}>{fmt(d.k)}</span>
               {multi && <span className="w-20 truncate text-xs opacity-70">{store?.name}</span>}
               <Tag s={slotStyle(r)}>{slotText(r)}</Tag>
-              {data.workOf(r) && <span className="ml-auto text-xs tabular-nums opacity-70">実働 {fmtHours(workHours(data.workOf(r)))}h</span>}
+              {pt && data.workOf(r) && <span className="ml-auto text-xs tabular-nums opacity-70">実働 {fmtHours(workHours(data.workOf(r)))}h</span>}
             </li>
           ))}
         </ul>
       )}
-      <div className="mt-2 text-xs opacity-70">計 {myAll.length} 日{myAll.some((x) => data.workOf(x.r)) && `　実働合計 ${fmtHours(total)}h`}</div>
+      <div className="mt-2 text-xs opacity-70">計 {myAll.length} 日{pt && myAll.some((x) => data.workOf(x.r)) && `　実働合計 ${fmtHours(total)}h`}</div>
     </Card>
   );
 }
