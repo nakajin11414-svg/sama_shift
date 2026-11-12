@@ -386,10 +386,35 @@ function RosterView({ data, profile }) {
     if (!confirm(`${s.name} さんを名簿から削除しますか？\nシフト表に表示されなくなります（過去の希望・実働は残ります）。`)) return;
     await api.deactivateStaff(s.id);
   };
-  const move = async (i, d) => {
-    const j = i + d; if (j < 0 || j >= data.staff.length) return;
-    await api.updateStaff(data.staff[i].id, { sort_order: j }); await api.updateStaff(data.staff[j].id, { sort_order: i });
+
+  // 絞り込みと並べ替え（表示だけ。保存されている順番は変えない）
+  const [f, setF] = useState({ q: "", position: "", store: "", skill: "", line: "", sort: "order" });
+  const posRank = Object.fromEntries(Object.keys(POSITIONS).map((k, i) => [k, i]));
+  const storeRank = (s) => {
+    const ranks = data.stores.map((st, i) => (data.membership[s.id]?.has(st.id) ? i : null)).filter((x) => x !== null);
+    return ranks.length ? Math.min(...ranks) : data.stores.length; // 未所属は最後
   };
+  const byName = (a, b) => a.name.localeCompare(b.name, "ja");
+  const sorters = {
+    order: () => 0, // data.staff は登録順
+    name: byName,
+    position: (a, b) => posRank[a.position || "part_time"] - posRank[b.position || "part_time"] || byName(a, b),
+    store: (a, b) => storeRank(a) - storeRank(b) || byName(a, b),
+  };
+  const shown = data.staff.filter((s) =>
+    (!f.q || s.name.includes(f.q.trim())) &&
+    (!f.position || (s.position || "part_time") === f.position) &&
+    (!f.store || (f.store === "none" ? !data.membership[s.id]?.size : data.membership[s.id]?.has(f.store))) &&
+    (!f.skill || s[f.skill]) &&
+    (!f.line || (f.line === "linked" ? !!s.profile_id : !s.profile_id))
+  ).sort(sorters[f.sort]);
+  const filtered = f.q || f.position || f.store || f.skill || f.line;
+  const sel = (key, label, opts) => (
+    <select value={f[key]} onChange={(e) => setF({ ...f, [key]: e.target.value })} aria-label={label}
+      className="text-xs border rounded px-1 py-1 bg-white" style={{ borderColor: f[key] && key !== "sort" ? NAVY : LINE }}>
+      {opts.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+    </select>
+  );
 
   return (
     <div className="flex flex-wrap gap-4 items-start">
@@ -425,11 +450,25 @@ function RosterView({ data, profile }) {
             placeholder="名前を先に作っておく（LINE未ログインでも可）" className="flex-1 px-3 py-1.5 rounded border text-sm" style={{ borderColor: "#B8C2CC" }} />
           <Btn tone="primary" onClick={add}>追加</Btn>
         </div>
-        {data.staff.length === 0 ? <div className="text-sm opacity-60">まだ登録がありません。</div> : (
+        {data.staff.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 mb-2">
+            <input value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} placeholder="名前で検索"
+              className="text-xs border rounded px-2 py-1 w-28" style={{ borderColor: LINE }} />
+            {sel("position", "役職", [["", "役職: すべて"], ...Object.entries(POSITIONS)])}
+            {sel("store", "所属店舗", [["", "店舗: すべて"], ...data.stores.map((st) => [st.id, st.name]), ["none", "未所属"]])}
+            {sel("skill", "できる仕事", [["", "仕事: すべて"], ...Object.entries(SKILLS).map(([k, sk]) => [k, sk.label])])}
+            {sel("line", "LINE", [["", "LINE: すべて"], ["linked", "連携済み"], ["unlinked", "未連携"]])}
+            {sel("sort", "並べ替え", [["order", "登録順"], ["name", "名前順"], ["position", "役職順"], ["store", "店舗順"]])}
+            {filtered && <button onClick={() => setF({ ...f, q: "", position: "", store: "", skill: "", line: "" })} className="text-xs underline opacity-70">条件をクリア</button>}
+            <span className="text-xs opacity-60 ml-auto">{shown.length} / {data.staff.length} 人</span>
+          </div>
+        )}
+        {data.staff.length === 0 ? <div className="text-sm opacity-60">まだ登録がありません。</div>
+          : shown.length === 0 ? <div className="text-sm opacity-60 py-2">条件に合うスタッフはいません。</div> : (
           <table className="text-sm w-full">
             <thead><tr className="text-xs opacity-70 text-left"><th className="py-1 pr-2">名前</th><th className="py-1 pr-2">役職</th><th className="py-1 pr-2">所属店舗</th><th className="py-1 pr-2">できる仕事</th><th></th></tr></thead>
             <tbody>
-              {data.staff.map((s, i) => {
+              {shown.map((s) => {
                 const p = data.profiles.find((x) => x.id === s.profile_id);
                 return (
                   <tr key={s.id} style={{ borderTop: "1px solid #EEF1F3" }}>
@@ -469,8 +508,6 @@ function RosterView({ data, profile }) {
                         {!s.profile_id && !meLinked && <Btn small tone="primary" onClick={() => api.updateStaff(s.id, { profile_id: profile.id })}>これは自分</Btn>}
                         {p && p.role !== "manager" && <Btn small onClick={() => confirm(`${s.name} さんを管理者にしますか？`) && api.setRole(p.id, "manager")}>管理者にする</Btn>}
                         {p && p.role === "manager" && data.profiles.filter((x) => x.role === "manager").length > 1 && <Btn small onClick={() => api.setRole(p.id, "staff")}>管理者を外す</Btn>}
-                        <Btn small onClick={() => move(i, -1)}>↑</Btn>
-                        <Btn small onClick={() => move(i, 1)}>↓</Btn>
                         {p && p.id !== profile.id && <Btn small onClick={() => unlink(s, p)}>連携解除</Btn>}
                         {!s.profile_id && <Btn small onClick={() => remove(s)}>名簿削除</Btn>}
                       </div>
