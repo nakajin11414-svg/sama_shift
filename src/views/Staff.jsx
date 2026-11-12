@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api } from "../lib/data.js";
-import { WD, PARTS, PART_KEYS, CUSTOM, OFFICE, canOffice, CHANGE_STATUS, NAVY, LINE, RED, CLOSED_BG, slotShort, slotText, slotStyle, dayColor } from "../lib/util.js";
+import { WD, PARTS, PART_KEYS, CUSTOM, CHANGE_STATUS, NAVY, LINE, RED, CLOSED_BG, slotShort, slotText, slotStyle, dayColor } from "../lib/util.js";
 import { Btn, Card, Tag } from "../ui.jsx";
 
 const HOURS = Array.from({ length: 15 }, (_, i) => i + 8); // 8〜22時
@@ -198,10 +198,6 @@ export default function StaffView({ data, days, profile }) {
             <button disabled={!sel.size || busy} onClick={() => apply("custom")} className="px-3 py-1.5 rounded disabled:opacity-40"
               style={{ background: CUSTOM.bg, color: CUSTOM.fg }}>時間指定で{verb}</button>
           </span>
-          {isManager && canOffice(me) && (
-            <button disabled={!sel.size || busy} onClick={() => apply("office")} className="px-3 py-1.5 rounded text-sm disabled:opacity-40"
-              style={{ background: OFFICE.bg, color: OFFICE.fg }} title="管理者のみ・運営と社員が対象。出勤日に数えますが、各枠の人数には数えません">事務で{verb}</button>
-          )}
           <Btn small disabled={!sel.size || busy} onClick={() => apply(null)}>{mode === "request" ? "選択日の取り消しを依頼" : "選択日の希望を取り消す"}</Btn>
         </div>
         </>}

@@ -120,13 +120,16 @@ function slotChoices(orig, windows) {
   return { allowed, segments };
 }
 
-function SlotEditor({ r, windows, office, onDone }) {
-  const orig = r.desired || r; // スタッフの元の希望
-  const { allowed, segments } = slotChoices(orig, windows);
-  const officeWish = orig.type === "office"; // 事務の希望なら事務だけ
+// r = 既存の希望（null なら社員・運営の出勤を新しく追加）。office = 運営・社員（全部の枠と事務を選べる）
+function SlotEditor({ r, windows, office, onSave, onDone }) {
+  const base = r || { type: "parts", parts: [] };
+  const orig = base.desired || base; // スタッフの元の希望
+  // 運営・社員は希望に関係なく全部の枠を選べる。アルバイトは希望の範囲内だけ
+  const { allowed, segments } = slotChoices(office ? { type: "parts", parts: PART_KEYS } : orig, windows);
+  const officeWish = !office && orig.type === "office"; // （念のため）事務の希望なら事務だけ
   // mode: "parts"（枠を選ぶ）／ "custom"（時間指定）／ "office"（事務。運営・社員のみ）
-  const [mode, setMode] = useState(r.type === "office" || officeWish ? "office" : r.type === "custom" || !allowed.length ? "custom" : "parts");
-  const [parts, setParts] = useState(() => new Set(r.type === "custom" ? [] : (r.parts || []).filter((p) => allowed.includes(p))));
+  const [mode, setMode] = useState(base.type === "office" || officeWish ? "office" : base.type === "custom" || !allowed.length ? "custom" : "parts");
+  const [parts, setParts] = useState(() => new Set(base.type === "custom" ? [] : (base.parts || []).filter((p) => allowed.includes(p))));
   const togglePart = (p) => { setMode("parts"); setParts((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; }); };
   const points = (seg) => {
     const out = new Set([seg[0], seg[1]]);
@@ -134,9 +137,9 @@ function SlotEditor({ r, windows, office, onDone }) {
     return [...out].sort((a, b) => a - b);
   };
   const segOf = (m) => segments.find(([a, b]) => m >= a && m < b) || segments[0];
-  const initStart = r.type === "custom" ? toMin(hhmm(r.start_time)) : segments[0][0];
+  const initStart = base.type === "custom" ? toMin(hhmm(base.start_time)) : segments[0][0];
   const [start, setStart] = useState(initStart);
-  const [end, setEnd] = useState(r.type === "custom" ? toMin(hhmm(r.end_time)) : segOf(initStart)[1]);
+  const [end, setEnd] = useState(base.type === "custom" ? toMin(hhmm(base.end_time)) : segOf(initStart)[1]);
   const [busy, setBusy] = useState(false);
   const startOpts = segments.flatMap((seg) => points(seg).filter((m) => m < seg[1]));
   const endOpts = points(segOf(start)).filter((m) => m > start);
@@ -148,7 +151,7 @@ function SlotEditor({ r, windows, office, onDone }) {
       : mode === "office" ? { type: "office", parts: [], start_time: null, end_time: null }
       : { type: "custom", parts: [], start_time: fromMin(start), end_time: fromMin(end) };
     setBusy(true);
-    try { await api.approveAs(r, slot); onDone(); } finally { setBusy(false); }
+    try { await (onSave ? onSave(slot) : api.approveAs(r, slot)); onDone(); } finally { setBusy(false); }
   };
   const chip = (on, s) => (on ? { background: s?.bg || NAVY, color: s?.fg || "#fff", outline: `2px solid ${NAVY}` } : { background: "#fff", color: NAVY, border: `1px solid ${LINE}` });
   const sel = "border rounded px-1 py-0.5 bg-white tabular-nums";
@@ -171,13 +174,17 @@ function SlotEditor({ r, windows, office, onDone }) {
         <Btn small tone="primary" disabled={busy} onClick={save}>この内容で出勤</Btn>
         <Btn small onClick={onDone}>やめる</Btn>
       </span>
-      <div className="w-full opacity-60">希望（{slotText(orig)}）の範囲内で選べます{office && !officeWish && "。運営・社員は「事務」（出勤日に数えるが、各枠の人数には数えない）も選べます"}</div>
+      <div className="w-full opacity-60">
+        {office ? "運営・社員は希望に関係なくすべての枠を選べます。「事務」は出勤日に数えますが、各枠の人数には数えません"
+          : `希望（${slotText(orig)}）の範囲内で選べます`}
+      </div>
     </div>
   );
 }
 
 function ApproveView({ data, days, mk }) {
   const [editing, setEditing] = useState(null); // 枠を変えて出勤にする希望のid
+  const [adding, setAdding] = useState(null); // 出勤を追加する運営・社員のid
   const [sel, setSel] = useState(days[0].k);
   useEffect(() => { if (!days.find((d) => d.k === sel)) setSel(days[0].k); }, [days, sel]);
   const S = data.store;
@@ -310,6 +317,25 @@ function ApproveView({ data, days, mk }) {
               <Btn small onClick={() => rows.filter((x) => x.r.status === "pending").forEach((x) => api.setStatus(x.r.id, "approved"))}>未定をすべて出勤</Btn>
             </div>
           )}
+          {(() => {
+            // 運営・社員は希望がなくても、管理者が出勤を直接入れる
+            const free = data.staffInStore.filter((s) => canOffice(s) && !data.requests[s.id]?.[day.k]);
+            const target = free.find((s) => s.id === adding);
+            return free.length > 0 && (
+              <div className="mt-3 pt-3 flex flex-wrap items-center gap-2 text-xs" style={{ borderTop: "1px solid #EEF1F3" }}>
+                <span>運営・社員の出勤を追加</span>
+                <select value={target ? target.id : ""} onChange={(e) => setAdding(e.target.value || null)}
+                  className="border rounded px-1 py-1 bg-white" style={{ borderColor: LINE }}>
+                  <option value="">人を選ぶ…</option>
+                  {free.map((s) => <option key={s.id} value={s.id}>{s.name}（{POSITIONS[s.position]}）</option>)}
+                </select>
+                {target && (
+                  <SlotEditor key={`${target.id}${day.k}`} r={null} windows={data.windows} office onDone={() => setAdding(null)}
+                    onSave={(slot) => api.upsertRequests(target.id, S.id, [day.k], slot.type, slot.parts, slot.start_time, slot.end_time, "approved")} />
+                )}
+              </div>
+            );
+          })()}
         </Card>
       </div>
     </div>
