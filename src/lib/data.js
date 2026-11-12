@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase.js";
-import { autoWork, covers, holidayName, mkey, monthDays, DEFAULT_RULE, DEFAULT_WINDOWS } from "./util.js";
+import { autoWork, covers, dkey, holidayName, mkey, monthDays, DEFAULT_RULE, DEFAULT_WINDOWS } from "./util.js";
 
 // 月と店舗ごとのデータをまとめて取得し、変更があれば自動で再取得する
 export function useShiftData(ym, storeId) {
@@ -11,7 +11,7 @@ export function useShiftData(ym, storeId) {
   const first = days[0].k, last = days[days.length - 1].k;
 
   const reload = useCallback(async () => {
-    const [stores, staff, staffStores, requests, daySettings, pubs, profiles, ann, logs] = await Promise.all([
+    const [stores, staff, staffStores, requests, daySettings, pubs, profiles, ann, logs, monthSet, changes] = await Promise.all([
       supabase.from("stores").select("*").order("sort_order").order("created_at"),
       supabase.from("staff").select("*").eq("active", true).order("sort_order").order("created_at"),
       supabase.from("staff_stores").select("*"),
@@ -21,13 +21,17 @@ export function useShiftData(ym, storeId) {
       supabase.from("profiles").select("id, display_name, picture_url, role, announcements_read_at"),
       supabase.from("announcements").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }).limit(100),
       supabase.from("work_logs").select("*"),
+      supabase.from("month_settings").select("*").eq("month", mk),
+      // 変更依頼: 未処理はすべての月、処理済みはこの月の分
+      supabase.from("change_requests").select("*").or(`status.eq.pending,and(date.gte.${first},date.lte.${last})`).order("created_at", { ascending: false }),
     ]);
-    const err = [stores, staff, staffStores, requests, daySettings, pubs, profiles, ann, logs].find((r) => r.error)?.error;
+    const err = [stores, staff, staffStores, requests, daySettings, pubs, profiles, ann, logs, monthSet, changes].find((r) => r.error)?.error;
     if (err) return setError(err.message);
     setError(null);
     setRaw({
       stores: stores.data, staff: staff.data, staffStores: staffStores.data, requests: requests.data,
       daySettings: daySettings.data, pubs: pubs.data, profiles: profiles.data, announcements: ann.data, logs: logs.data,
+      monthSettings: monthSet.data, changes: changes.data,
     });
   }, [first, last, mk]);
 
@@ -38,7 +42,7 @@ export function useShiftData(ym, storeId) {
   }, [reload]);
   useEffect(() => {
     const ch = supabase.channel("shift-changes");
-    for (const t of ["requests", "day_settings", "publications", "staff", "staff_stores", "stores", "profiles", "announcements", "work_logs"]) {
+    for (const t of ["requests", "day_settings", "publications", "staff", "staff_stores", "stores", "profiles", "announcements", "work_logs", "month_settings", "change_requests"]) {
       ch.on("postgres_changes", { event: "*", schema: "public", table: t }, () => reload());
     }
     ch.subscribe();
@@ -67,7 +71,16 @@ export function useShiftData(ym, storeId) {
     const isHoliday = (day) => typeOf(day) !== "weekday";
     const ruleFor = (day) => ({ ...DEFAULT_RULE, ...(store.rules?.[typeOf(day)] || store.rules?.weekday || {}) });
     const isRecruit = (k) => !!daySet[k]?.recruit;
+    // 定休日: 日ごとの設定があればそれ、なければ店舗の毎週の定休日
+    const closedWeekdays = new Set(store.closed_weekdays || []);
+    const defaultClosed = (day) => closedWeekdays.has(day.w);
+    const isClosed = (day) => daySet[day.k]?.closed ?? defaultClosed(day);
     const published = raw.pubs.some((p) => p.store_id === store.id);
+    // 締切: この日の終わりまで入力できる。過ぎたら募集中の日以外は変更依頼で受け付ける
+    const deadline = raw.monthSettings.find((m) => m.store_id === store.id)?.deadline || null;
+    const t = new Date();
+    const deadlinePassed = !!deadline && dkey(t.getFullYear(), t.getMonth(), t.getDate()) > deadline;
+    const isLocked = (day) => deadlinePassed && !isRecruit(day.k);
     const logs = Object.fromEntries(raw.logs.map((l) => [l.request_id, l]));
     // 実働: 個別入力があればそれ、なければその日の営業時間（一括入力）から計算
     // （全店舗表示でも使うので、希望の店舗の設定で計算する）
@@ -99,7 +112,7 @@ export function useShiftData(ym, storeId) {
         }
       }
     }
-    return { ...raw, store, windows, membership, staffInStore, requests, requestsAll, daySet, defaultType, typeOf, isHoliday, ruleFor, isRecruit, published, counts, logs, dayHours, workOf };
+    return { ...raw, store, windows, membership, staffInStore, requests, requestsAll, daySet, defaultType, typeOf, isHoliday, ruleFor, isRecruit, defaultClosed, isClosed, published, deadline, deadlinePassed, isLocked, counts, logs, dayHours, workOf };
   }, [raw, days, storeId]);
 
   return { data: view, days, mk, error, reload };
@@ -129,6 +142,34 @@ export const api = {
   async setStatus(id, status) { check(await supabase.from("requests").update({ status }).eq("id", id)); },
   // 日ごとの設定・公開
   async setDayType(storeId, date, day_type) { check(await supabase.from("day_settings").upsert({ store_id: storeId, date, day_type }, { onConflict: "store_id,date" })); },
+  // 締切（null で解除）
+  async setDeadline(storeId, month, deadline) { check(await supabase.from("month_settings").upsert({ store_id: storeId, month, deadline }, { onConflict: "store_id,month" })); },
+  // 変更依頼
+  async sendChangeRequests(staffId, storeId, dates, action, type, parts, start, end, reason) {
+    const rows = dates.map((date) => ({
+      staff_id: staffId, store_id: storeId, date, action, reason,
+      type: action === "set" ? type : null,
+      parts: action === "set" && type === "parts" ? parts : [],
+      start_time: action === "set" && type === "custom" ? start : null,
+      end_time: action === "set" && type === "custom" ? end : null,
+    }));
+    check(await supabase.from("change_requests").insert(rows));
+  },
+  async withdrawChangeRequest(id) { check(await supabase.from("change_requests").delete().eq("id", id)); },
+  // 承諾: 希望に反映してから依頼を「承諾」にする
+  async approveChangeRequest(c) {
+    if (c.action === "remove") {
+      check(await supabase.from("requests").delete().eq("staff_id", c.staff_id).eq("store_id", c.store_id).eq("date", c.date));
+    } else {
+      check(await supabase.from("requests").upsert({
+        staff_id: c.staff_id, store_id: c.store_id, date: c.date, type: c.type, parts: c.parts,
+        start_time: c.start_time, end_time: c.end_time, status: "approved",
+      }, { onConflict: "staff_id,date,store_id" }));
+    }
+    check(await supabase.from("change_requests").update({ status: "approved", decided_at: new Date().toISOString() }).eq("id", c.id));
+  },
+  async rejectChangeRequest(id) { check(await supabase.from("change_requests").update({ status: "rejected", decided_at: new Date().toISOString() }).eq("id", id)); },
+  async setClosed(storeId, date, closed) { check(await supabase.from("day_settings").upsert({ store_id: storeId, date, closed }, { onConflict: "store_id,date" })); },
   async setRecruit(storeId, date, recruit) { check(await supabase.from("day_settings").upsert({ store_id: storeId, date, recruit }, { onConflict: "store_id,date" })); },
   async setPublished(storeId, month, on) {
     check(on ? await supabase.from("publications").upsert({ store_id: storeId, month }, { onConflict: "store_id,month" })

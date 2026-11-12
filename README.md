@@ -5,7 +5,7 @@ LINEログインで使うシフト希望・承認・公開アプリです。
 
 ## 既にv1を動かしている場合（v2への更新）
 
-1. Supabase の **SQL Editor** で `supabase/migrations/0002_stores_prep_announcements_worklogs.sql` を実行する（既存のデータは「本店」という店舗に引き継がれます）。続けて `0003_day_work_hours.sql`、`0004_day_delivery.sql`、`0005_staff_skills.sql`、`0006_staff_position.sql` も実行する（実働時間の一括入力・デリバリー担当・できる仕事・役職の追加用）
+1. Supabase の **SQL Editor** で `supabase/migrations/0002_stores_prep_announcements_worklogs.sql` を実行する（既存のデータは「本店」という店舗に引き継がれます）。続けて `0003_day_work_hours.sql`、`0004_day_delivery.sql`、`0005_staff_skills.sql`、`0006_staff_position.sql`、`0007_closed_days.sql`、`0008_deadline_change_requests.sql` も実行する（実働時間の一括入力・デリバリー担当・できる仕事・役職・定休日・締切と変更依頼の追加用）
 2. GitHub のファイルをこのフォルダの内容で置き換える（`src/` 以下と `package.json`）
 3. Edge Function `unlink-line` を追加する（下の「4. Edge Function」参照。LINE連携の解除に使います）
 4. Vercel が自動で再デプロイするのを待つ
@@ -17,7 +17,7 @@ LINEログインで使うシフト希望・承認・公開アプリです。
 
 ### 2. Supabase
 1. **New project**（リージョンは Northeast Asia (Tokyo)）
-2. **SQL Editor** で `supabase/migrations/0001_schema.sql` を実行、続けて `0002_...sql`、`0003_...sql`、`0004_...sql`、`0005_...sql`、`0006_...sql` の順に実行
+2. **SQL Editor** で `supabase/migrations/0001_schema.sql` を実行、続けて `0002_...sql`、`0003_...sql`、`0004_...sql`、`0005_...sql`、`0006_...sql`、`0007_...sql`、`0008_...sql` の順に実行
 3. **Authentication → Providers → Email** が有効であることを確認（メールは送りません。セッション発行に内部で使うだけ）
 4. **Project Settings → API** の Project URL と `anon` キーをメモ
 
@@ -60,5 +60,5 @@ LINEログインで使うシフト希望・承認・公開アプリです。
 | LINEでログイン→「400 Bad Request」 | LINE のコールバックURLが完全一致しているか |
 | 「LINEのトークン取得に失敗」 | Edge Function の Secrets、Verify JWT がオフか |
 | 自分以外がログインできない | LINE チャネルが「公開済み」か |
-| 読み込みエラー | SQL（0001〜0006）が最後まで実行されているか |
+| 読み込みエラー | SQL（0001〜0008）が最後まで実行されているか |
 | 他の人の操作が自動反映されない | Database → Publications → supabase_realtime で各テーブルをオン |

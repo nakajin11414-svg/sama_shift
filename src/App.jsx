@@ -73,7 +73,8 @@ function Shell({ profile }) {
 
   // 未読のお知らせ件数（自分の店舗向けか全店舗向け）
   const unread = data ? data.announcements.filter((a) => a.created_at > profile.announcements_read_at && (!a.store_id || !data.store || a.store_id === data.store.id)).length : 0;
-  const tabs = [["staff", "希望入力"], ...(isManager ? [["manager", "管理者"]] : []), ["published", "確定シフト"], ["news", "お知らせ", unread]];
+  const changeCount = data && isManager ? data.changes.filter((c) => c.status === "pending").length : 0;
+  const tabs = [["staff", "希望入力"], ...(isManager ? [["manager", "管理者", changeCount]] : []), ["published", "確定シフト"], ["news", "お知らせ", unread]];
 
   return (
     <div style={{ color: NAVY, background: "#EEF1F3", minHeight: "100vh" }}>

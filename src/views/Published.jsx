@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
-import { WD, PARTS, PART_KEYS, NAVY, LINE, fmt, skillShort, slotText, slotShort, slotStyle, covers, dayColor, workHours, fmtHours } from "../lib/util.js";
-import { Btn, Card, Tag } from "../ui.jsx";
+import { WD, PARTS, PART_KEYS, NAVY, LINE, CLOSED_BG, fmt, skillShort, slotText, slotShort, slotStyle, covers, dayColor, workHours, fmtHours } from "../lib/util.js";
+import { Card, Tag } from "../ui.jsx";
 
 export default function PublishedView({ data, days, mk, profile, isManager }) {
   const [preview, setPreview] = useState(false);
   const [focus, setFocus] = useState(null); // {kind:"staff", s} | {kind:"date", k}
-  const [mineAll, setMineAll] = useState(false);
   useEffect(() => { setFocus(null); }, [mk, data.store?.id]);
   const S = data.store;
   const myRow = data.staff.find((s) => s.profile_id === profile.id);
@@ -15,37 +14,17 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
     .filter((r) => r.status === "approved" && data.pubs.some((p) => p.store_id === r.store_id))
     .map((r) => ({ d, r, store: data.stores.find((s) => s.id === r.store_id) }))) : [];
 
-  if (mineAll && myRow) {
-    return (
-      <div className="p-4 max-w-xl mx-auto text-sm">
-        <div className="flex items-center mb-3"><span className="font-medium">{myRow.name} さんの全店舗の出勤日（{mk.replace("-", "年")}月）</span><Btn small className="ml-auto" onClick={() => setMineAll(false)}>店舗の表に戻る</Btn></div>
-        <Card className="p-4">
-          {myAll.length === 0 ? <div className="opacity-60">公開済みの出勤日はありません。</div> : (
-            <ul className="divide-y" style={{ borderColor: "#EEF1F3" }}>
-              {myAll.map(({ d, r, store }) => (
-                <li key={r.id} className="flex items-center gap-2 py-1.5">
-                  <span className="tabular-nums w-16" style={{ color: dayColor(d, data.isHoliday(d)) }}>{fmt(d.k)}</span>
-                  <span className="w-20 truncate text-xs opacity-70">{store?.name}</span>
-                  <Tag s={slotStyle(r)}>{slotText(r)}</Tag>
-                  {data.workOf(r) && <span className="ml-auto text-xs tabular-nums opacity-70">実働 {fmtHours(workHours(data.workOf(r)))}h</span>}
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="mt-2 text-xs opacity-70">計 {myAll.length} 日{myAll.some((x) => data.workOf(x.r)) && `　実働合計 ${fmtHours(myAll.reduce((a, x) => a + workHours(data.workOf(x.r)), 0))}h`}</div>
-        </Card>
-      </div>
-    );
-  }
+  // 自分の出勤日（全店舗）は店舗の表の下に常に出す
+  const mine = myRow && <MyShifts data={data} myRow={myRow} myAll={myAll} mk={mk} />;
 
   if (!data.published && !(isManager && preview)) {
     return (
-      <div className="p-6 text-sm max-w-md mx-auto text-center">
-        <div className="mb-3">{S.name} の {mk.replace("-", "年")}月のシフトはまだ公開されていません。</div>
-        <div className="flex flex-col items-center gap-2">
+      <div className="p-4">
+        <div className="text-sm text-center py-4">
+          <div className="mb-3">{S.name} の {mk.replace("-", "年")}月のシフトはまだ公開されていません。</div>
           {isManager && <button onClick={() => setPreview(true)} className="text-xs underline opacity-70">管理者用プレビューを表示</button>}
-          {myRow && data.stores.length > 1 && <button onClick={() => setMineAll(true)} className="text-xs underline opacity-70">自分の全店舗の出勤日を見る</button>}
         </div>
+        {mine && data.stores.length > 1 && <div className="mt-2 flex justify-center">{mine}</div>}
       </div>
     );
   }
@@ -61,7 +40,6 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
       {!data.published && <div className="mb-3 text-xs px-3 py-2 rounded" style={{ background: "#F3D27A", color: "#4A3600" }}>未公開のプレビューです。スタッフには表示されません。</div>}
       <div className="flex flex-wrap items-center gap-2 text-xs opacity-70 mb-2">
         <span>{S.name}：名前をタップ → その人の出勤日一覧。日付をタップ → その日の出勤者一覧。</span>
-        {myRow && data.stores.length > 1 && <button onClick={() => setMineAll(true)} className="underline">自分の全店舗の出勤日</button>}
       </div>
 
       <div className="flex flex-wrap gap-4 items-start">
@@ -75,7 +53,7 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
                   return (
                     <th key={d.k} onClick={() => setFocus(on ? null : { kind: "date", k: d.k })}
                       className="cursor-pointer px-1 py-1 text-xs font-normal tabular-nums"
-                      style={{ width: cellW, minWidth: cellW, background: on ? "#E3E9F0" : hol ? "#F7F2F2" : "#fff", borderBottom: `1px solid ${LINE}`, color: dayColor(d, hol) }}>
+                      style={{ width: cellW, minWidth: cellW, background: on ? "#E3E9F0" : data.isClosed(d) ? CLOSED_BG : hol ? "#F7F2F2" : "#fff", borderBottom: `1px solid ${LINE}`, color: dayColor(d, hol) }}>
                       {d.d}<span className="opacity-70">({WD[d.w]})</span>
                     </th>
                   );
@@ -143,6 +121,34 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
           </Card>
         )}
       </div>
+      {mine && <div className="mt-4">{mine}</div>}
     </div>
+  );
+}
+
+// 自分の出勤日（公開済みの全店舗分）
+function MyShifts({ data, myRow, myAll, mk }) {
+  const multi = data.stores.length > 1;
+  const total = myAll.reduce((a, x) => a + workHours(data.workOf(x.r)), 0);
+  return (
+    <Card className="p-4 text-sm w-full max-w-xl text-left">
+      <div className="font-medium mb-2">
+        {myRow.name} さんの出勤日{multi && "（全店舗）"}
+        <span className="text-xs font-normal opacity-60 ml-2">{mk.replace("-", "年")}月・公開済みの店舗のみ</span>
+      </div>
+      {myAll.length === 0 ? <div className="opacity-60">公開済みの出勤日はありません。</div> : (
+        <ul className="divide-y" style={{ borderColor: "#EEF1F3" }}>
+          {myAll.map(({ d, r, store }) => (
+            <li key={r.id} className="flex items-center gap-2 py-1.5">
+              <span className="tabular-nums w-16" style={{ color: dayColor(d, data.isHoliday(d)) }}>{fmt(d.k)}</span>
+              {multi && <span className="w-20 truncate text-xs opacity-70">{store?.name}</span>}
+              <Tag s={slotStyle(r)}>{slotText(r)}</Tag>
+              {data.workOf(r) && <span className="ml-auto text-xs tabular-nums opacity-70">実働 {fmtHours(workHours(data.workOf(r)))}h</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-2 text-xs opacity-70">計 {myAll.length} 日{myAll.some((x) => data.workOf(x.r)) && `　実働合計 ${fmtHours(total)}h`}</div>
+    </Card>
   );
 }

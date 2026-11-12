@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../lib/data.js";
-import { WD, PARTS, PART_KEYS, CUSTOM, NAVY, LINE, RED, slotShort, slotStyle, dayColor } from "../lib/util.js";
-import { Btn, Card } from "../ui.jsx";
+import { WD, PARTS, PART_KEYS, CUSTOM, CHANGE_STATUS, NAVY, LINE, RED, CLOSED_BG, slotShort, slotText, slotStyle, dayColor } from "../lib/util.js";
+import { Btn, Card, Tag } from "../ui.jsx";
 
 const HOURS = Array.from({ length: 15 }, (_, i) => i + 8); // 8〜22時
 
@@ -17,6 +17,7 @@ export default function StaffView({ data, days, profile }) {
   const [start, setStart] = useState(10);
   const [end, setEnd] = useState("14");
   const [busy, setBusy] = useState(false);
+  const [reason, setReason] = useState("");
 
   if (isManager && !me) {
     return <div className="p-6 text-sm opacity-70">この店舗に所属するスタッフがいません。「管理者 → スタッフ名簿」で所属店舗にチェックを入れてください。</div>;
@@ -39,7 +40,17 @@ export default function StaffView({ data, days, profile }) {
   const others = (k) => (data.requestsAll[me.id]?.[k] || []).filter((r) => r.store_id !== data.store.id && r.status !== "rejected");
   const lead = days[0].w;
   const toggle = (k) => setSel((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
-  const pick = (pred) => setSel(new Set(days.filter(pred).map((d) => d.k)));
+  // 定休日は選べない（ただし既に希望が入っている日は、取り消せるように選べる）
+  const selectable = (d) => !data.isClosed(d) || !!mine[d.k];
+  // 締切後は募集中の日以外を直接変更できない（変更依頼を送る）。管理者は常に直接変更できる
+  const locked = (d) => !isManager && data.isLocked(d);
+  const dayOf = (k) => days.find((d) => d.k === k);
+  const pick = (pred) => setSel(new Set(days.filter((d) => !data.isClosed(d) && !locked(d) && pred(d)).map((d) => d.k)));
+  const lockedSel = [...sel].filter((k) => locked(dayOf(k)));
+  const mode = lockedSel.length === 0 ? "edit" : lockedSel.length === sel.size ? "request" : "mixed";
+  // 自分の変更依頼（この店舗）
+  const myChanges = (data.changes || []).filter((c) => c.staff_id === me.id && c.store_id === data.store.id);
+  const pendingChange = Object.fromEntries(myChanges.filter((c) => c.status === "pending").map((c) => [c.date, c]));
   // 「通し」はランチ・ディナーとは別のボタンとして選ぶ（どちらかを選ぶともう一方は外れる）
   const togglePart = (p) => setParts((s) => {
     const n = new Set(s);
@@ -63,13 +74,31 @@ export default function StaffView({ data, days, profile }) {
 
   const apply = async (type) => {
     if (type === "parts" && parts.size === 0) return alert("枠を1つ以上選んでください");
+    // 定休日には登録しない（取り消しだけできる）
+    const open = [...sel].filter((k) => !data.isClosed(dayOf(k)));
+    if (type && !open.length) return alert("選択中の日はすべて定休日です");
+    if (mode === "request") {
+      // 締切後: 変更依頼として管理者に送る
+      const dates = type ? open : [...sel].filter((k) => mine[k]);
+      if (!dates.length) return alert("選択中の日に取り消す希望がありません");
+      if (dates.some((k) => pendingChange[k]) && !confirm("確認待ちの変更依頼がある日が含まれています。新しい依頼も送りますか？")) return;
+      setBusy(true);
+      try {
+        await api.sendChangeRequests(me.id, data.store.id, dates, type ? "set" : "remove", type, chosenParts(), hh(start), hh(endFor(end)), reason.trim());
+        setSel(new Set()); setReason("");
+        alert(`${dates.length} 日分の変更依頼を送りました。管理者の確認をお待ちください。`);
+      } finally { setBusy(false); }
+      return;
+    }
     setBusy(true);
     try {
-      if (type) await api.upsertRequests(me.id, data.store.id, [...sel], type, chosenParts(), hh(start), hh(endFor(end)), isManager ? "approved" : undefined);
+      if (type) await api.upsertRequests(me.id, data.store.id, open, type, chosenParts(), hh(start), hh(endFor(end)), isManager ? "approved" : undefined);
       else await api.deleteRequests(me.id, data.store.id, [...sel]);
       setSel(new Set());
     } finally { setBusy(false); }
   };
+  const verb = mode === "request" ? "変更依頼" : "登録";
+  const fmtDl = (k) => { const [, m, d] = k.split("-").map(Number); return `${m}/${d}(${WD[new Date(k + "T00:00").getDay()]})`; };
 
   return (
     <div className="p-4 max-w-3xl mx-auto">
@@ -89,7 +118,18 @@ export default function StaffView({ data, days, profile }) {
         <Btn small onClick={() => pick(data.isHoliday)}>土日祝のみ</Btn>
         <Btn small onClick={() => setSel(new Set())}>選択解除</Btn>
       </div>
-      <div className="text-xs opacity-70 mb-2">日付をタップで複数選択 → 下で枠を選ぶと一括登録</div>
+      {data.deadline && (
+        data.deadlinePassed ? (
+          <div className="text-xs mb-2 px-3 py-2 rounded" style={{ background: "#F7E4E4", color: "#7A1E1E" }}>
+            締切（{fmtDl(data.deadline)}）を過ぎました。{isManager ? "管理者は引き続き直接変更できます。" : "「募集中」の日だけ直接入力できます。それ以外の日を変えたいときは、日付を選んで下から変更依頼を送ってください。"}
+          </div>
+        ) : (
+          <div className="text-xs mb-2 px-3 py-2 rounded" style={{ background: "#F6EBD6", color: "#7A4A00" }}>
+            締切: {fmtDl(data.deadline)} まで。締切後は変更依頼（管理者の承諾が必要）になります。
+          </div>
+        )
+      )}
+      <div className="text-xs opacity-70 mb-2">日付をタップで複数選択 → 下で枠を選ぶと一括{verb}</div>
 
       <div className="grid grid-cols-7 gap-1 text-center text-xs mb-1">
         {WD.map((w, i) => <div key={w} className="py-1" style={{ color: i === 0 ? RED : i === 6 ? "#2C5282" : undefined }}>{w}</div>)}
@@ -101,26 +141,38 @@ export default function StaffView({ data, days, profile }) {
           const hol = data.isHoliday(day);
           const on = sel.has(day.k);
           const ot = others(day.k);
+          const closed = data.isClosed(day);
           return (
-            <button key={day.k} onClick={() => toggle(day.k)}
-              className="rounded text-left p-1.5 min-h-16 flex flex-col"
-              style={{ border: `2px solid ${on ? NAVY : LINE}`, background: on ? "#E3E9F0" : hol ? "#F7F2F2" : "#fff" }}>
-              <span className="text-sm tabular-nums" style={{ color: dayColor(day, hol) }}>{day.d}</span>
+            <button key={day.k} onClick={() => toggle(day.k)} disabled={!selectable(day)}
+              className="rounded text-left p-1.5 min-h-16 flex flex-col disabled:cursor-not-allowed"
+              style={{ border: `2px solid ${on ? NAVY : LINE}`, background: on ? "#E3E9F0" : closed ? CLOSED_BG : hol ? "#F7F2F2" : "#fff" }}>
+              <span className="text-sm tabular-nums" style={{ color: dayColor(day, hol), opacity: closed ? 0.6 : 1 }}>{day.d}</span>
+              {closed && <span className="text-xs opacity-60">定休日</span>}
               {r && (
                 <span className="mt-auto text-xs px-1 rounded self-start" style={{ background: slotStyle(r).bg, color: slotStyle(r).fg, opacity: r.status === "rejected" ? 0.5 : 1 }}>
                   {slotShort(r)}{r.status !== "pending" && <span className="ml-1">{r.status === "approved" ? "✓" : "✕"}</span>}
                 </span>
               )}
               {ot.length > 0 && <span className="text-xs opacity-60 truncate" title={ot.map((x) => data.stores.find((s) => s.id === x.store_id)?.name).join("、")}>他店{ot.some((x) => x.status === "approved") ? "✓" : ""}</span>}
-              {data.isRecruit(day.k) && !r && ot.length === 0 && <span className="mt-auto text-xs" style={{ color: RED }}>募集中</span>}
+              {data.isRecruit(day.k) && !closed && !r && ot.length === 0 && <span className="mt-auto text-xs" style={{ color: RED }}>募集中</span>}
+              {pendingChange[day.k] && <span className="text-xs truncate" style={{ color: "#7A4A00" }}>依頼中</span>}
             </button>
           );
         })}
       </div>
-      <div className="mt-1 text-xs opacity-70">✓ 出勤 ／ ✕ 休み ／ 印なし 確認待ち ／ 他店 = 別店舗に希望あり</div>
+      <div className="mt-1 text-xs opacity-70">✓ 出勤 ／ ✕ 休み ／ 印なし 確認待ち ／ 他店 = 別店舗に希望あり ／ 灰色 = 定休日（選べません）{data.deadlinePassed && !isManager && " ／ 依頼中 = 変更依頼の確認待ち"}</div>
 
-      <Card className="mt-4 p-4">
-        <div className="text-sm mb-2">{sel.size ? `選択中の ${sel.size} 日に入れる枠` : "日付を選んでください"}</div>
+      <Card className="mt-4 p-4" style={mode === "request" ? { borderColor: "#E0B35A", background: "#FFFBEF" } : undefined}>
+        {mode === "mixed" ? (
+          <div className="text-sm" style={{ color: RED }}>「募集中」の日と締切後の日が混ざっています。募集中の日（直接入力）と、それ以外の日（変更依頼）は分けて選んでください。</div>
+        ) : <>
+        <div className="text-sm mb-2">
+          {!sel.size ? "日付を選んでください" : mode === "request" ? `選択中の ${sel.size} 日の変更依頼（締切後のため、管理者の承諾が必要です）` : `選択中の ${sel.size} 日に入れる枠`}
+        </div>
+        {mode === "request" && (
+          <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} placeholder="理由（例: 学校の予定が入ったため）"
+            className="w-full mb-3 px-2 py-1.5 rounded border text-sm bg-white" style={{ borderColor: "#B8C2CC" }} />
+        )}
         <div className="flex flex-wrap gap-2 items-center mb-3">
           {PART_KEYS.map((p) => (
             <button key={p} onClick={() => togglePart(p)} className="px-3 py-1.5 rounded text-sm"
@@ -132,7 +184,7 @@ export default function StaffView({ data, days, profile }) {
             style={parts.has("through") ? { background: slotStyle({ parts: ["lunch", "dinner"] }).bg, color: slotStyle({ parts: ["lunch", "dinner"] }).fg, outline: `2px solid ${NAVY}` } : { background: "#fff", color: NAVY, border: `1px solid ${LINE}` }}>
             通し
           </button>
-          <Btn tone="primary" disabled={!sel.size || busy || !parts.size} onClick={() => apply("parts")}>この枠で登録</Btn>
+          <Btn tone="primary" disabled={!sel.size || busy || !parts.size} onClick={() => apply("parts")}>この枠で{verb}</Btn>
           <span className="text-xs opacity-60">仕込みと組み合わせることもできます（例: 仕込み＋ランチ、仕込み＋通し）</span>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
@@ -144,11 +196,31 @@ export default function StaffView({ data, days, profile }) {
               {endChoices.map((c) => <option key={c.v} value={c.v}>{c.label}</option>)}
             </select>
             <button disabled={!sel.size || busy} onClick={() => apply("custom")} className="px-3 py-1.5 rounded disabled:opacity-40"
-              style={{ background: CUSTOM.bg, color: CUSTOM.fg }}>時間指定で登録</button>
+              style={{ background: CUSTOM.bg, color: CUSTOM.fg }}>時間指定で{verb}</button>
           </span>
-          <Btn small disabled={!sel.size || busy} onClick={() => apply(null)}>選択日の希望を取り消す</Btn>
+          <Btn small disabled={!sel.size || busy} onClick={() => apply(null)}>{mode === "request" ? "選択日の取り消しを依頼" : "選択日の希望を取り消す"}</Btn>
         </div>
+        </>}
       </Card>
+
+      {myChanges.length > 0 && (
+        <Card className="mt-4 p-4 text-sm">
+          <div className="mb-2">送った変更依頼</div>
+          <ul className="divide-y" style={{ borderColor: "#EEF1F3" }}>
+            {myChanges.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-center gap-2 py-1.5">
+                <span className="tabular-nums w-16">{fmtDl(c.date)}</span>
+                {c.action === "remove" ? <span className="text-xs">取り消し</span> : <Tag s={slotStyle(c)}>{slotText(c)}</Tag>}
+                {c.reason && <span className="text-xs opacity-70 truncate max-w-[12rem]" title={c.reason}>{c.reason}</span>}
+                <span className="ml-auto flex items-center gap-2">
+                  <Tag s={CHANGE_STATUS[c.status]}>{CHANGE_STATUS[c.status].label}</Tag>
+                  {c.status === "pending" && <Btn small onClick={() => confirm("この変更依頼を取り下げますか？") && api.withdrawChangeRequest(c.id)}>取り下げ</Btn>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
     </div>
   );
 }

@@ -2,6 +2,7 @@ export const WD = ["日", "月", "火", "水", "木", "金", "土"];
 export const NAVY = "#1F2A44";
 export const LINE = "#D5DCE2";
 export const RED = "#9B2C2C";
+export const CLOSED_BG = "#E4E7EA"; // 定休日の背景
 
 // 枠（仕込み・ランチ・ディナー）
 export const PARTS = {
@@ -15,6 +16,12 @@ export const STATUS = {
   pending: { label: "未定", bg: "#EEF1F3", fg: "#5A6B7A" },
   approved: { label: "出勤", bg: "#CFE8D8", fg: "#0F3A24" },
   rejected: { label: "休み", bg: "#F7E4E4", fg: "#7A1E1E" },
+};
+// 変更依頼の状態
+export const CHANGE_STATUS = {
+  pending: { label: "確認待ち", bg: "#F6EBD6", fg: "#7A4A00" },
+  approved: { label: "承諾", bg: "#CFE8D8", fg: "#0F3A24" },
+  rejected: { label: "却下", bg: "#F7E4E4", fg: "#7A1E1E" },
 };
 export const TYPE = {
   weekday: { label: "平日", fg: NAVY },
