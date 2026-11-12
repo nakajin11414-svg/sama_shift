@@ -89,32 +89,24 @@ function EmployeeDaysOff({ data, days, mk }) {
 
 // ---------- シフト管理 ----------
 // 「出勤」で開く枠の選択。選べるのは希望の範囲内だけ
-//   枠の希望: 希望した枠（とその組み合わせ。ランチ＋ディナーなら通しも）＋ その枠の時間内での時間指定
+//   枠の希望: 希望した枠（仕込み・ランチ・ディナーを個別に。複数選べる）＋ その枠の時間内での時間指定
 //   時間指定の希望: その時間内に収まる枠 ＋ その時間内での時間指定
+//   組み合わせ（ランチ＋ディナー＝通し など）は確定シフトの表記で分かるので、選択肢には出さない
 const STEP_MIN = 30; // 時間指定の刻み（分）
 const toMin = (t) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
 const fromMin = (n) => `${pad(Math.floor(n / 60))}:${pad(n % 60)}`;
 
 function slotChoices(orig, windows) {
   const win = (p) => windows[p] || DEFAULT_WINDOWS[p];
-  const choices = []; // { key, label, parts }
-  const add = (ps) => {
-    const key = ps.join("+");
-    if (ps.length && !choices.some((c) => c.key === key)) choices.push({ key, parts: ps, label: slotText({ type: "parts", parts: ps }) });
-  };
+  let allowed; // 選べる枠
   let segments; // 時間指定できる範囲 [開始分, 終了分][]
   if (orig.type === "custom") {
     const s = toMin(hhmm(orig.start_time)), e = toMin(hhmm(orig.end_time));
-    const inside = PART_KEYS.filter((p) => win(p)[0] * 60 >= s && win(p)[1] * 60 <= e);
-    inside.forEach((p) => add([p]));
-    if (inside.includes("lunch") && inside.includes("dinner")) add(["lunch", "dinner"]);
+    allowed = PART_KEYS.filter((p) => win(p)[0] * 60 >= s && win(p)[1] * 60 <= e);
     segments = [[s, e]];
   } else {
     const ps = PART_KEYS.filter((p) => (orig.parts || []).includes(p));
-    ps.forEach((p) => add([p]));
-    if (ps.includes("lunch") && ps.includes("dinner")) add(["lunch", "dinner"]);
-    if (ps.includes("prep") && ps.includes("lunch")) add(["prep", "lunch"]);
-    add(ps); // 希望どおりの組み合わせ（例: 仕込み＋通し）
+    allowed = ps;
     // 続いている枠（仕込み→ランチ→ディナー）はつなげて1つの範囲にする
     segments = [];
     ps.forEach((p, i) => {
@@ -125,14 +117,16 @@ function slotChoices(orig, windows) {
     });
   }
   if (!segments.length) segments = [win("lunch").map((h) => h * 60)]; // 念のため（枠の無い希望）
-  return { choices, segments };
+  return { allowed, segments };
 }
 
 function SlotEditor({ r, windows, onDone }) {
   const orig = r.desired || r; // スタッフの元の希望
-  const { choices, segments } = slotChoices(orig, windows);
-  const cur = r.type === "custom" ? null : PART_KEYS.filter((p) => (r.parts || []).includes(p)).join("+");
-  const [pick, setPick] = useState(r.type === "custom" ? "custom" : choices.some((c) => c.key === cur) ? cur : choices[0]?.key || "custom");
+  const { allowed, segments } = slotChoices(orig, windows);
+  // mode: "parts"（枠を選ぶ）か "custom"（時間指定）
+  const [mode, setMode] = useState(r.type === "custom" || !allowed.length ? "custom" : "parts");
+  const [parts, setParts] = useState(() => new Set(r.type === "custom" ? [] : (r.parts || []).filter((p) => allowed.includes(p))));
+  const togglePart = (p) => { setMode("parts"); setParts((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; }); };
   const points = (seg) => {
     const out = new Set([seg[0], seg[1]]);
     for (let m = Math.ceil(seg[0] / STEP_MIN) * STEP_MIN; m < seg[1]; m += STEP_MIN) out.add(m);
@@ -148,8 +142,8 @@ function SlotEditor({ r, windows, onDone }) {
   const changeStart = (m) => { setStart(m); if (end <= m || end > segOf(m)[1]) setEnd(segOf(m)[1]); };
 
   const save = async () => {
-    const c = choices.find((x) => x.key === pick);
-    const slot = c ? { type: "parts", parts: c.parts, start_time: null, end_time: null }
+    if (mode === "parts" && !parts.size) return alert("枠を1つ以上選んでください");
+    const slot = mode === "parts" ? { type: "parts", parts: PART_KEYS.filter((p) => parts.has(p)), start_time: null, end_time: null }
       : { type: "custom", parts: [], start_time: fromMin(start), end_time: fromMin(end) };
     setBusy(true);
     try { await api.approveAs(r, slot); onDone(); } finally { setBusy(false); }
@@ -159,11 +153,12 @@ function SlotEditor({ r, windows, onDone }) {
   return (
     <div className="w-full mt-1 p-2 rounded text-xs flex flex-wrap items-center gap-2" style={{ background: "#F4F6F8" }}>
       <span className="opacity-70">出勤の枠</span>
-      {choices.map((c) => (
-        <button key={c.key} onClick={() => setPick(c.key)} className="px-2.5 py-1 rounded" style={chip(pick === c.key, slotStyle({ type: "parts", parts: c.parts }))}>{c.label}</button>
+      {allowed.map((p) => (
+        <button key={p} onClick={() => togglePart(p)} className="px-2.5 py-1 rounded" style={chip(mode === "parts" && parts.has(p), PARTS[p])}>{PARTS[p].label}</button>
       ))}
-      <button onClick={() => setPick("custom")} className="px-2.5 py-1 rounded" style={chip(pick === "custom")}>時間指定</button>
-      {pick === "custom" && (
+      <button onClick={() => setMode("custom")} className="px-2.5 py-1 rounded" style={chip(mode === "custom")}>時間指定</button>
+      {mode === "parts" && parts.size > 1 && <span className="opacity-60">→ {slotText({ type: "parts", parts: [...parts] })}</span>}
+      {mode === "custom" && (
         <span className="flex items-center gap-1">
           <select value={start} onChange={(e) => changeStart(Number(e.target.value))} className={sel}>{startOpts.map((m) => <option key={m} value={m}>{fromMin(m)}</option>)}</select>〜
           <select value={end} onChange={(e) => setEnd(Number(e.target.value))} className={sel}>{endOpts.map((m) => <option key={m} value={m}>{fromMin(m)}</option>)}</select>
