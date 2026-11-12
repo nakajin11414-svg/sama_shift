@@ -28,9 +28,16 @@ export default function App() {
 
   useEffect(() => {
     if (!session) return setProfile(null);
-    supabase.from("profiles").select("*").eq("id", session.user.id).single().then(({ data }) => setProfile(data));
-    const ch = supabase.channel("me").on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${session.user.id}` },
-      (p) => setProfile(p.new)).subscribe();
+    const uid = session.user.id;
+    // プロフィールが無い＝LINE連携を解除された → ログアウトしてログイン画面へ
+    supabase.from("profiles").select("*").eq("id", uid).maybeSingle().then(({ data, error }) => {
+      if (data) setProfile(data);
+      else if (!error) signOut();
+    });
+    const ch = supabase.channel("me")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${uid}` }, (p) => setProfile(p.new))
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "profiles" }, (p) => { if (p.old?.id === uid) signOut(); })
+      .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [session]);
 

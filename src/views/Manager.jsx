@@ -370,9 +370,21 @@ function RosterView({ data, profile }) {
     await api.addStaff(n, nextOrder(), p.id, curStore); await api.setRole(p.id, "staff");
   };
   const linkTo = async (staffId, p) => { await api.updateStaff(staffId, { profile_id: p.id }); await api.setRole(p.id, "staff"); };
+  // 名簿の名前は残し、LINEアカウントとの紐づけだけ外す → そのLINEアカウントは「登録待ち」に戻る
+  const unlink = async (s, p) => {
+    if (!confirm(`${s.name} さんとLINE（${p.display_name}）の連携を解除しますか？\n名簿の名前と過去の希望・実働は残り、LINEアカウントは「登録待ち」に戻ります。`)) return;
+    await api.updateStaff(s.id, { profile_id: null });
+    await api.setRole(p.id, "pending");
+  };
+  // 退職: このアプリのログイン情報を削除する（相手のLINE側には何もしない）
+  const retire = async (p) => {
+    if (!confirm(`LINE: ${p.display_name} さんを退職扱いにしますか？\nこのアプリのログイン情報を削除し、このLINEアカウントではアプリを使えなくなります。\n（もう一度LINEでログインした場合は、新しく「登録待ち」に表示されます）`)) return;
+    await api.unlinkLine(p.id);
+  };
+  // 名簿から消す（過去の希望・実働は残る）
   const remove = async (s) => {
-    if (!confirm(`${s.name} さんを名簿から外しますか？（過去の希望は残ります）`)) return;
-    await api.deactivateStaff(s.id); if (s.profile_id) await api.setRole(s.profile_id, "pending");
+    if (!confirm(`${s.name} さんを名簿から削除しますか？\nシフト表に表示されなくなります（過去の希望・実働は残ります）。`)) return;
+    await api.deactivateStaff(s.id);
   };
   const move = async (i, d) => {
     const j = i + d; if (j < 0 || j >= data.staff.length) return;
@@ -398,6 +410,7 @@ function RosterView({ data, profile }) {
                     {unlinkedStaff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 )}
+                <Btn small onClick={() => retire(p)}>退職</Btn>
               </li>
             ))}
           </ul>
@@ -452,7 +465,8 @@ function RosterView({ data, profile }) {
                         {p && p.role === "manager" && data.profiles.filter((x) => x.role === "manager").length > 1 && <Btn small onClick={() => api.setRole(p.id, "staff")}>管理者を外す</Btn>}
                         <Btn small onClick={() => move(i, -1)}>↑</Btn>
                         <Btn small onClick={() => move(i, 1)}>↓</Btn>
-                        <Btn small onClick={() => remove(s)}>外す</Btn>
+                        {p && p.id !== profile.id && <Btn small onClick={() => unlink(s, p)}>連携解除</Btn>}
+                        {!s.profile_id && <Btn small onClick={() => remove(s)}>名簿削除</Btn>}
                       </div>
                     </td>
                   </tr>

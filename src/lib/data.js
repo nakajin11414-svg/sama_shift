@@ -151,6 +151,13 @@ export const api = {
   async updateStaff(id, patch) { check(await supabase.from("staff").update(patch).eq("id", id)); },
   async deactivateStaff(id) { check(await supabase.from("staff").update({ active: false, profile_id: null }).eq("id", id)); },
   async setRole(profileId, role) { check(await supabase.from("profiles").update({ role }).eq("id", profileId)); },
+  // LINE連携の解除（アカウントを削除。名簿と過去のデータは残る）
+  async unlinkLine(profileId) {
+    const { data, error } = await supabase.functions.invoke("unlink-line", { body: { profile_id: profileId } });
+    let msg = error ? error.message : data?.error;
+    if (error?.context?.json) { try { msg = (await error.context.json()).error || msg; } catch { /* 本文なし */ } }
+    check({ error: msg ? { message: msg } : null });
+  },
   // お知らせ
   async postAnnouncement(row) { check(await supabase.from("announcements").insert(row)); },
   async updateAnnouncement(id, patch) { check(await supabase.from("announcements").update(patch).eq("id", id)); },

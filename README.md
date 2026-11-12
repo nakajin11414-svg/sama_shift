@@ -7,7 +7,8 @@ LINEログインで使うシフト希望・承認・公開アプリです。
 
 1. Supabase の **SQL Editor** で `supabase/migrations/0002_stores_prep_announcements_worklogs.sql` を実行する（既存のデータは「本店」という店舗に引き継がれます）。続けて `0003_day_work_hours.sql`、`0004_day_delivery.sql`、`0005_staff_skills.sql` も実行する（実働時間の一括入力・デリバリー担当・できる仕事の追加用）
 2. GitHub のファイルをこのフォルダの内容で置き換える（`src/` 以下と `package.json`）
-3. Vercel が自動で再デプロイするのを待つ
+3. Edge Function `unlink-line` を追加する（下の「4. Edge Function」参照。LINE連携の解除に使います）
+4. Vercel が自動で再デプロイするのを待つ
 
 ## 新規セットアップ
 
@@ -29,6 +30,8 @@ LINEログインで使うシフト希望・承認・公開アプリです。
 ### 4. Edge Function
 ダッシュボードの **Edge Functions → Deploy a new function** で名前を `line-login` にし、`supabase/functions/line-login/index.ts` の内容を貼って Deploy。
 **Secrets** に `LINE_CHANNEL_ID` と `LINE_CHANNEL_SECRET` を追加し、関数の設定で **Verify JWT** をオフにする。
+
+続けて同じ手順で、名前を `unlink-line` にして `supabase/functions/unlink-line/index.ts` を Deploy（LINE連携の解除用。こちらは **Verify JWT はオンのまま**、Secrets の追加も不要）。
 
 ### 5. Vercel
 リポジトリを選び、Framework Preset は **Vite**。Environment Variables に次の3つを追加して Deploy。
