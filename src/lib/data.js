@@ -182,7 +182,8 @@ export const api = {
     } else {
       check(await supabase.from("requests").upsert({
         staff_id: c.staff_id, store_id: c.store_id, date: c.date, type: c.type, parts: c.parts,
-        start_time: c.start_time, end_time: c.end_time, status: "approved", desired: null,
+        start_time: c.start_time, end_time: c.end_time, desired: null,
+        status: c.type === "off" ? "pending" : "approved", // 休み希望は出勤ではないので未定のまま
       }, { onConflict: "staff_id,date,store_id" }));
     }
     check(await supabase.from("change_requests").update({ status: "approved", decided_at: new Date().toISOString() }).eq("id", c.id));

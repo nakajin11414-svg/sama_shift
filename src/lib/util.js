@@ -16,6 +16,9 @@ export const CUSTOM = { label: "時間指定", short: "他", bg: "#CFD8DE", fg: 
 export const OFFICE = { label: "事務", short: "事", bg: "#D9D2E9", fg: "#2E2257" };
 export const OFFICE_POSITIONS = ["operation", "employee"];
 export const canOffice = (s) => OFFICE_POSITIONS.includes(s?.position);
+// 運営・社員の休み希望（出勤には数えない）
+export const OFF_WISH = { label: "休み希望", short: "休", bg: "#F7E4E4", fg: "#7A1E1E" };
+export const isWork = (r) => !!r && r.type !== "off";
 // 実働時間を出すのはアルバイトだけ
 export const isPartTime = (s) => (s?.position || "part_time") === "part_time";
 export const STATUS = {
@@ -89,10 +92,11 @@ export const covers = (req, part, windows) => partsOf(req, windows).includes(par
 // 表示用
 const ordered = (r) => PART_KEYS.filter((p) => (r.parts || []).includes(p));
 export const slotText = (r) =>
-  r.type === "office" ? OFFICE.label : r.type === "custom" ? `${hhmm(r.start_time)}〜${hhmm(r.end_time)}` : ordered(r).map((p) => PARTS[p].label).join("＋").replace("ランチ＋ディナー", "通し") || "？";
+  r.type === "off" ? OFF_WISH.label : r.type === "office" ? OFFICE.label : r.type === "custom" ? `${hhmm(r.start_time)}〜${hhmm(r.end_time)}` : ordered(r).map((p) => PARTS[p].label).join("＋").replace("ランチ＋ディナー", "通し") || "？";
 export const slotShort = (r) =>
-  r.type === "office" ? OFFICE.short : r.type === "custom" ? `${hhmm(r.start_time).slice(0, 2)}-${hhmm(r.end_time).slice(0, 2)}` : ordered(r).map((p) => PARTS[p].short).join("").replace("ラデ", "通") || "？";
+  r.type === "off" ? OFF_WISH.short : r.type === "office" ? OFFICE.short : r.type === "custom" ? `${hhmm(r.start_time).slice(0, 2)}-${hhmm(r.end_time).slice(0, 2)}` : ordered(r).map((p) => PARTS[p].short).join("").replace("ラデ", "通") || "？";
 export const slotStyle = (r) => {
+  if (r.type === "off") return OFF_WISH;
   if (r.type === "office") return OFFICE;
   if (r.type === "custom") return CUSTOM;
   const ps = ordered(r);

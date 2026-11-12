@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/data.js";
-import { WD, PARTS, PART_KEYS, STATUS, CHANGE_STATUS, OFFICE, canOffice, isPartTime, TYPE, SKILLS, POSITIONS, skillShort, NAVY, LINE, RED, CLOSED_BG, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, DEFAULT_WINDOWS, slotText, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm } from "../lib/util.js";
+import { WD, PARTS, PART_KEYS, STATUS, CHANGE_STATUS, OFFICE, OFF_WISH, canOffice, isPartTime, TYPE, SKILLS, POSITIONS, skillShort, NAVY, LINE, RED, CLOSED_BG, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, DEFAULT_WINDOWS, slotText, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm } from "../lib/util.js";
 import { Btn, Card, Tag, Gauge } from "../ui.jsx";
 
 export default function ManagerView(props) {
@@ -51,7 +51,7 @@ function EmployeeDaysOff({ data, days, mk }) {
   const stat = (s) => {
     const all = data.requestsAll[s.id] || {};
     const work = days.filter((d) => (all[d.k] || []).some((r) => r.status === "approved")).length;
-    const pending = days.filter((d) => (all[d.k] || []).some((r) => r.status === "pending") && !(all[d.k] || []).some((r) => r.status === "approved")).length;
+    const pending = days.filter((d) => (all[d.k] || []).some((r) => r.status === "pending" && r.type !== "off") && !(all[d.k] || []).some((r) => r.status === "approved")).length;
     const off = days.length - work;
     return { work, pending, off, left: quota == null ? null : quota - off };
   };
@@ -184,7 +184,6 @@ function SlotEditor({ r, windows, office, onSave, onDone }) {
 
 function ApproveView({ data, days, mk }) {
   const [editing, setEditing] = useState(null); // 枠を変えて出勤にする希望のid
-  const [adding, setAdding] = useState(null); // 出勤を追加する運営・社員のid
   const [sel, setSel] = useState(days[0].k);
   useEffect(() => { if (!days.find((d) => d.k === sel)) setSel(days[0].k); }, [days, sel]);
   const S = data.store;
@@ -192,6 +191,8 @@ function ApproveView({ data, days, mk }) {
   const req = data.ruleFor(day);
   const c = data.counts[day.k];
   const rows = data.staffInStore.map((s) => ({ s, r: data.requests[s.id]?.[day.k] })).filter((x) => x.r);
+  // 運営・社員は休み希望のない日が出勤予定（定休日は除く）
+  const planned = data.isClosed(day) ? [] : data.staffInStore.filter((s) => canOffice(s) && !data.requests[s.id]?.[day.k]);
   const order = { pending: 0, approved: 1, rejected: 2 };
   rows.sort((a, b) => order[a.r.status] - order[b.r.status]);
   const pendingTotal = days.reduce((a, d) => a + PART_KEYS.reduce((b, p) => b + data.counts[d.k][p].pending, 0), 0);
@@ -288,10 +289,22 @@ function ApproveView({ data, days, mk }) {
             {data.daySet[day.k]?.day_type && <span className="opacity-60">（通常は{TYPE[data.defaultType(day)].label}）</span>}
           </div>
 
-          {rows.length === 0 ? <div className="text-sm opacity-60 py-4">この日の希望はまだありません。</div> : (
+          {rows.length === 0 && planned.length === 0 ? <div className="text-sm opacity-60 py-4">この日の希望はまだありません。</div> : (
             <ul className="divide-y" style={{ borderColor: "#EEF1F3" }}>
               {rows.map(({ s, r }) => {
                 const ot = otherStore(s.id);
+                if (r.type === "off") return (
+                  // 運営・社員の休み希望（出勤にすることもできる）
+                  <li key={s.id} className="flex flex-wrap items-center gap-2 py-2 text-sm" style={{ opacity: 0.7 }}>
+                    <span className="w-24 truncate">{s.name}<span className="ml-1 text-xs opacity-60">{POSITIONS[s.position]}</span></span>
+                    <Tag s={OFF_WISH}>{OFF_WISH.label}</Tag>
+                    <span className="ml-auto flex gap-1">
+                      <Btn small onClick={() => setEditing(editing === r.id ? null : r.id)}>出勤にする</Btn>
+                      <Btn small onClick={() => confirm(`${s.name} さんの休み希望を取り消して、出勤予定に戻しますか？`) && api.deleteRequests(s.id, S.id, [day.k])}>取消</Btn>
+                    </span>
+                    {editing === r.id && <SlotEditor r={r} windows={data.windows} office onDone={() => setEditing(null)} />}
+                  </li>
+                );
                 return (
                   <li key={s.id} className="flex flex-wrap items-center gap-2 py-2 text-sm" style={{ opacity: r.status === "rejected" ? 0.6 : 1 }}>
                     <span className="w-24 truncate">{s.name}
@@ -310,32 +323,31 @@ function ApproveView({ data, days, mk }) {
                   </li>
                 );
               })}
+              {planned.map((s) => {
+                // 運営・社員で休み希望のない日 = 出勤予定。枠は管理者が決める
+                const key = `plan:${s.id}`;
+                return (
+                  <li key={key} className="flex flex-wrap items-center gap-2 py-2 text-sm">
+                    <span className="w-24 truncate">{s.name}<span className="ml-1 text-xs opacity-60">{POSITIONS[s.position]}</span></span>
+                    <Tag s={STATUS.pending}>出勤予定</Tag>
+                    <span className="ml-auto flex gap-1">
+                      <Btn small tone="primary" onClick={() => setEditing(editing === key ? null : key)}>出勤</Btn>
+                      <Btn small tone="danger" onClick={() => api.upsertRequests(s.id, S.id, [day.k], "off", [], null, null, "pending")} title="この日を休みにする（休み希望として記録）">休み</Btn>
+                    </span>
+                    {editing === key && (
+                      <SlotEditor key={key + day.k} r={null} windows={data.windows} office onDone={() => setEditing(null)}
+                        onSave={(slot) => api.upsertRequests(s.id, S.id, [day.k], slot.type, slot.parts, slot.start_time, slot.end_time, "approved")} />
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
-          {rows.some((x) => x.r.status === "pending") && (
+          {rows.some((x) => x.r.status === "pending" && x.r.type !== "off") && (
             <div className="mt-3 flex justify-end">
-              <Btn small onClick={() => rows.filter((x) => x.r.status === "pending").forEach((x) => api.setStatus(x.r.id, "approved"))}>未定をすべて出勤</Btn>
+              <Btn small onClick={() => rows.filter((x) => x.r.status === "pending" && x.r.type !== "off").forEach((x) => api.setStatus(x.r.id, "approved"))}>未定をすべて出勤</Btn>
             </div>
           )}
-          {(() => {
-            // 運営・社員は希望がなくても、管理者が出勤を直接入れる
-            const free = data.staffInStore.filter((s) => canOffice(s) && !data.requests[s.id]?.[day.k]);
-            const target = free.find((s) => s.id === adding);
-            return free.length > 0 && (
-              <div className="mt-3 pt-3 flex flex-wrap items-center gap-2 text-xs" style={{ borderTop: "1px solid #EEF1F3" }}>
-                <span>運営・社員の出勤を追加</span>
-                <select value={target ? target.id : ""} onChange={(e) => setAdding(e.target.value || null)}
-                  className="border rounded px-1 py-1 bg-white" style={{ borderColor: LINE }}>
-                  <option value="">人を選ぶ…</option>
-                  {free.map((s) => <option key={s.id} value={s.id}>{s.name}（{POSITIONS[s.position]}）</option>)}
-                </select>
-                {target && (
-                  <SlotEditor key={`${target.id}${day.k}`} r={null} windows={data.windows} office onDone={() => setAdding(null)}
-                    onSave={(slot) => api.upsertRequests(target.id, S.id, [day.k], slot.type, slot.parts, slot.start_time, slot.end_time, "approved")} />
-                )}
-              </div>
-            );
-          })()}
         </Card>
       </div>
     </div>

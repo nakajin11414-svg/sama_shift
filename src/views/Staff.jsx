@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api } from "../lib/data.js";
-import { WD, PARTS, PART_KEYS, CUSTOM, CHANGE_STATUS, NAVY, LINE, RED, CLOSED_BG, slotShort, slotText, slotStyle, dayColor } from "../lib/util.js";
+import { WD, PARTS, PART_KEYS, CUSTOM, OFF_WISH, canOffice, CHANGE_STATUS, NAVY, LINE, RED, CLOSED_BG, slotShort, slotText, slotStyle, dayColor } from "../lib/util.js";
 import { Btn, Card, Tag } from "../ui.jsx";
 
 const HOURS = Array.from({ length: 15 }, (_, i) => i + 8); // 8〜22時
@@ -48,6 +48,7 @@ export default function StaffView({ data, days, profile }) {
   const pick = (pred) => setSel(new Set(days.filter((d) => !data.isClosed(d) && !locked(d) && pred(d)).map((d) => d.k)));
   const lockedSel = [...sel].filter((k) => locked(dayOf(k)));
   const mode = lockedSel.length === 0 ? "edit" : lockedSel.length === sel.size ? "request" : "mixed";
+  const offMode = canOffice(me); // 運営・社員は休み希望を出す
   // 自分の変更依頼（この店舗）
   const myChanges = (data.changes || []).filter((c) => c.staff_id === me.id && c.store_id === data.store.id);
   const pendingChange = Object.fromEntries(myChanges.filter((c) => c.status === "pending").map((c) => [c.date, c]));
@@ -92,7 +93,9 @@ export default function StaffView({ data, days, profile }) {
     }
     setBusy(true);
     try {
-      if (type) await api.upsertRequests(me.id, data.store.id, open, type, chosenParts(), hh(start), hh(endFor(end)), isManager ? "approved" : undefined);
+      // 管理者の代理入力は出勤として確定。休み希望は出勤ではないので未定のまま
+      const status = type === "off" ? (isManager ? "pending" : undefined) : isManager ? "approved" : undefined;
+      if (type) await api.upsertRequests(me.id, data.store.id, open, type, chosenParts(), hh(start), hh(endFor(end)), status);
       else await api.deleteRequests(me.id, data.store.id, [...sel]);
       setSel(new Set());
     } finally { setBusy(false); }
@@ -160,19 +163,28 @@ export default function StaffView({ data, days, profile }) {
           );
         })}
       </div>
-      <div className="mt-1 text-xs opacity-70">✓ 出勤 ／ ✕ 休み ／ 印なし 確認待ち ／ 他店 = 別店舗に希望あり ／ 灰色 = 定休日（選べません）{data.deadlinePassed && !isManager && " ／ 依頼中 = 変更依頼の確認待ち"}</div>
+      <div className="mt-1 text-xs opacity-70">✓ 出勤 ／ ✕ 休み ／ 印なし 確認待ち ／ 他店 = 別店舗に希望あり ／ 灰色 = 定休日（選べません）{offMode && " ／ 休 = 休み希望（それ以外の日は出勤予定）"}{data.deadlinePassed && !isManager && " ／ 依頼中 = 変更依頼の確認待ち"}</div>
 
       <Card className="mt-4 p-4" style={mode === "request" ? { borderColor: "#E0B35A", background: "#FFFBEF" } : undefined}>
         {mode === "mixed" ? (
           <div className="text-sm" style={{ color: RED }}>「募集中」の日と締切後の日が混ざっています。募集中の日（直接入力）と、それ以外の日（変更依頼）は分けて選んでください。</div>
         ) : <>
         <div className="text-sm mb-2">
-          {!sel.size ? "日付を選んでください" : mode === "request" ? `選択中の ${sel.size} 日の変更依頼（締切後のため、管理者の承諾が必要です）` : `選択中の ${sel.size} 日に入れる枠`}
+          {!sel.size ? "日付を選んでください" : mode === "request" ? `選択中の ${sel.size} 日の変更依頼（締切後のため、管理者の承諾が必要です）` : offMode ? `選択中の ${sel.size} 日` : `選択中の ${sel.size} 日に入れる枠`}
         </div>
         {mode === "request" && (
           <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} placeholder="理由（例: 学校の予定が入ったため）"
             className="w-full mb-3 px-2 py-1.5 rounded border text-sm bg-white" style={{ borderColor: "#B8C2CC" }} />
         )}
+        {offMode ? (
+          // 運営・社員: 休みたい日だけ出す。それ以外の日は出勤予定（枠は管理者が決める）
+          <div className="flex flex-wrap gap-2 items-center">
+            <button disabled={!sel.size || busy} onClick={() => apply("off")} className="px-3 py-1.5 rounded text-sm disabled:opacity-40"
+              style={{ background: OFF_WISH.bg, color: OFF_WISH.fg }}>休み希望で{verb}</button>
+            <Btn small disabled={!sel.size || busy} onClick={() => apply(null)}>{mode === "request" ? "選択日の取り消しを依頼" : "選択日の休み希望を取り消す"}</Btn>
+            <span className="w-full text-xs opacity-60">運営・社員は休みたい日だけ入れてください。それ以外の日は出勤予定として、管理者が枠（仕込み・ランチ・ディナー・事務など）を決めます。</span>
+          </div>
+        ) : <>
         <div className="flex flex-wrap gap-2 items-center mb-3">
           {PART_KEYS.map((p) => (
             <button key={p} onClick={() => togglePart(p)} className="px-3 py-1.5 rounded text-sm"
@@ -200,6 +212,7 @@ export default function StaffView({ data, days, profile }) {
           </span>
           <Btn small disabled={!sel.size || busy} onClick={() => apply(null)}>{mode === "request" ? "選択日の取り消しを依頼" : "選択日の希望を取り消す"}</Btn>
         </div>
+        </>}
         </>}
       </Card>
 
