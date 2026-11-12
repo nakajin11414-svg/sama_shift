@@ -193,7 +193,7 @@ function ApproveView({ data, days, mk }) {
         <span>{S.name}：出勤の人数が各日の基準に揃ったら公開してください。</span>
         {pendingTotal > 0 && <span className="text-xs opacity-70">未定 {pendingTotal} 件</span>}
         <label className="flex items-center gap-1 text-xs">
-          希望の締切
+          シフト希望締切
           <input type="date" value={data.deadline || ""} min={`${mk}-01`} onChange={(e) => api.setDeadline(S.id, mk, e.target.value || null)}
             className="border rounded px-1 py-0.5 bg-white" style={{ borderColor: LINE }} />
           {data.deadline && <span style={{ color: data.deadlinePassed ? RED : undefined }}>{data.deadlinePassed ? "締切済み" : "まで受付"}</span>}
