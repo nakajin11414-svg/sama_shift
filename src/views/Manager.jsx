@@ -44,6 +44,49 @@ function PartGauge({ c, rule, part, compact }) {
 }
 
 
+// 社員の休み残り（全店舗の出勤で数える。休み = その月で出勤（承諾済み）がない日）
+function EmployeeDaysOff({ data, days, mk }) {
+  const quota = data.employeeDaysOff;
+  const employees = data.staff.filter((s) => s.position === "employee");
+  const stat = (s) => {
+    const all = data.requestsAll[s.id] || {};
+    const work = days.filter((d) => (all[d.k] || []).some((r) => r.status === "approved")).length;
+    const pending = days.filter((d) => (all[d.k] || []).some((r) => r.status === "pending") && !(all[d.k] || []).some((r) => r.status === "approved")).length;
+    const off = days.length - work;
+    return { work, pending, off, left: quota == null ? null : quota - off };
+  };
+  return (
+    <Card className="px-4 py-3 mb-4 text-sm">
+      <div className="flex flex-wrap items-center gap-2 mb-2">
+        <span>社員の休み</span>
+        <label className="flex items-center gap-1 text-xs">
+          {mk.replace("-", "年")}月の休み
+          <input type="number" min={0} max={days.length} key={`${mk}${quota}`} defaultValue={quota ?? ""} placeholder="未設定"
+            onBlur={(e) => { const v = e.target.value === "" ? null : Math.max(0, Math.min(days.length, Number(e.target.value) || 0)); if (v !== quota) api.setEmployeeDaysOff(mk, v); }}
+            onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+            className="w-16 border rounded px-1 py-0.5 tabular-nums" style={{ borderColor: LINE }} />日
+        </label>
+        <span className="text-xs opacity-60">全店舗共通。休み＝出勤（承諾済み）がない日。入力欄から離れると保存</span>
+      </div>
+      {employees.length === 0 ? <div className="text-xs opacity-60">役職が「社員」のスタッフがいません（スタッフ名簿で設定）。</div> : (
+        <div className="flex flex-wrap gap-x-5 gap-y-1">
+          {employees.map((s) => {
+            const st = stat(s);
+            return (
+              <span key={s.id} className="tabular-nums" title={`出勤 ${st.work}日 ／ 休み ${st.off}日${st.pending ? ` ／ 未定 ${st.pending}日` : ""}`}>
+                {s.name}：{st.left == null ? <span className="opacity-60">休み {st.off}日</span>
+                  : st.left >= 0 ? <>休み残り<b className="mx-0.5">{st.left}</b>日</>
+                  : <span style={{ color: RED }}>休み残り0日（{-st.left}日多い）</span>}
+                <span className="text-xs opacity-50 ml-1">出勤{st.work}{st.pending ? `・未定${st.pending}` : ""}</span>
+              </span>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // ---------- シフト管理 ----------
 function ApproveView({ data, days, mk }) {
   const [sel, setSel] = useState(days[0].k);
@@ -75,6 +118,8 @@ function ApproveView({ data, days, mk }) {
           {data.published ? "公開を取り下げる" : `${mk.replace("-", "年")}月分を公開する`}
         </Btn>
       </Card>
+
+      <EmployeeDaysOff data={data} days={days} mk={mk} />
 
       <div className="flex flex-wrap gap-4 items-start">
         <Card className="flex-1 min-w-[min(20rem,100%)] overflow-x-auto">
