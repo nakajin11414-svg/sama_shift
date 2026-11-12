@@ -67,7 +67,7 @@ function ApproveView({ data, days, mk }) {
       </Card>
 
       <div className="flex flex-wrap gap-4 items-start">
-        <Card className="flex-1 min-w-80 overflow-x-auto">
+        <Card className="flex-1 min-w-[min(20rem,100%)] overflow-x-auto">
           <div className="grid text-xs px-3 py-2 opacity-70" style={{ gridTemplateColumns: "5rem 1fr 1fr 1fr 3.5rem", minWidth: 380, borderBottom: `1px solid ${LINE}` }}>
             <span>日付</span>{PART_KEYS.map((p) => <span key={p}>{PARTS[p].label}</span>)}<span>募集</span>
           </div>
@@ -96,7 +96,7 @@ function ApproveView({ data, days, mk }) {
           <div className="px-3 py-2 text-xs opacity-70">「出勤/基準 +未定」。赤＝多い、黄＝足りない。「!」＝デリバリー・厨房の必要人数に足りない（両方できる人はどちらか一方に数えます）。</div>
         </Card>
 
-        <Card className="flex-1 min-w-80 p-4 sticky top-4">
+        <Card className="flex-1 min-w-[min(20rem,100%)] p-4 sticky top-4">
           <div className="flex flex-wrap items-center gap-2 mb-2">
             <span className="text-base font-medium">{fmt(day.k)}</span>
             {holidayName(day.k) && <span className="text-xs" style={{ color: RED }}>{holidayName(day.k)}</span>}
@@ -394,7 +394,7 @@ function RosterView({ data, profile }) {
   return (
     <div className="flex flex-wrap gap-4 items-start">
       {pending.length > 0 && (
-        <Card className="p-4 flex-1 min-w-72" style={{ borderColor: "#F3D27A", background: "#FFFBEF" }}>
+        <Card className="p-4 flex-1 min-w-[min(18rem,100%)]" style={{ borderColor: "#F3D27A", background: "#FFFBEF" }}>
           <div className="text-sm font-medium mb-1">LINEでログインした登録待ちの人</div>
           <div className="text-xs opacity-70 mb-3">名簿に載せる名前を確認して登録してください。登録後、所属店舗とできる仕事を名簿で設定します。</div>
           <ul className="divide-y" style={{ borderColor: "#EEF1F3" }}>
@@ -417,7 +417,7 @@ function RosterView({ data, profile }) {
         </Card>
       )}
 
-      <Card className="p-4 flex-1 min-w-80 overflow-x-auto">
+      <Card className="p-4 flex-1 min-w-[min(20rem,100%)] overflow-x-auto">
         <div className="text-sm mb-1">スタッフ名簿（全店舗）</div>
         {!meLinked && <div className="text-xs mb-3 px-2 py-1 rounded" style={{ background: "#F6EBD6", color: "#7A4A00" }}>あなた自身もシフトに入るなら、自分の名前を追加して「これは自分」を押してください。</div>}
         <div className="flex gap-2 mb-3">
@@ -500,7 +500,7 @@ function StoresView({ data, days }) {
 
   return (
     <div className="flex flex-wrap gap-4 items-start">
-      <Card className="p-4 min-w-72">
+      <Card className="p-4 min-w-[min(18rem,100%)]">
         <div className="text-sm mb-2">店舗</div>
         <ul className="divide-y mb-3" style={{ borderColor: "#EEF1F3" }}>
           {data.stores.map((st) => (

@@ -77,28 +77,31 @@ function Shell({ profile }) {
 
   return (
     <div style={{ color: NAVY, background: "#EEF1F3", minHeight: "100vh" }}>
-      <header className="flex flex-wrap items-center gap-2 px-3 py-2" style={{ background: NAVY, color: "#EEF1F3" }}>
-        <div className="text-lg font-semibold tracking-wide mr-1">シフト表</div>
+      {/* スマホ: 1行目 タイトル・店舗・メニュー / 2行目 月 / 3行目 タブ（横幅いっぱい）。md以上は1行 */}
+      <header className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-3 py-2" style={{ background: NAVY, color: "#EEF1F3" }}>
+        <div className="order-1 text-lg font-semibold tracking-wide mr-1 whitespace-nowrap">シフト表</div>
         {data && data.stores.length > 0 && (
           <select value={data.store?.id || ""} onChange={(e) => chooseStore(e.target.value)}
-            className="text-sm rounded px-2 py-1" style={{ background: "#2C3A5C", color: "#EEF1F3", border: "1px solid #4A5878" }}>
+            className="order-2 min-w-0 max-w-[45vw] md:max-w-none text-sm rounded px-2 py-1" style={{ background: "#2C3A5C", color: "#EEF1F3", border: "1px solid #4A5878" }}>
             {data.stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         )}
-        <div className="flex items-center gap-1">
-          <button onClick={() => shift(-1)} className="px-2 py-1 rounded hover:bg-white/10">‹</button>
+        <div className="order-4 w-full md:w-auto md:order-3 flex items-center gap-1">
+          <button onClick={() => shift(-1)} aria-label="前の月" className="px-2 py-1 rounded hover:bg-white/10">‹</button>
           <span className="tabular-nums w-24 text-center text-sm">{ym.y}年{ym.m + 1}月</span>
-          <button onClick={() => shift(1)} className="px-2 py-1 rounded hover:bg-white/10">›</button>
-          {data?.published && <span className="text-xs px-2 py-0.5 rounded" style={{ background: "#8FBFA6", color: "#0F3A24" }}>公開中</span>}
+          <button onClick={() => shift(1)} aria-label="次の月" className="px-2 py-1 rounded hover:bg-white/10">›</button>
+          {data?.published && <span className="text-xs px-2 py-0.5 rounded whitespace-nowrap" style={{ background: "#8FBFA6", color: "#0F3A24" }}>公開中</span>}
         </div>
-        <nav className="ml-auto flex rounded overflow-hidden" style={{ border: "1px solid #EEF1F3" }}>
+        <nav className="order-5 w-full md:w-auto md:order-4 md:ml-auto flex rounded overflow-hidden" style={{ border: "1px solid #EEF1F3" }}>
           {tabs.map(([k, l, badge]) => (
-            <button key={k} onClick={() => setMode(k)} className="px-3 py-1 text-sm relative" style={mode === k ? { background: "#EEF1F3", color: NAVY } : {}}>
+            <button key={k} onClick={() => setMode(k)} className="flex-1 md:flex-none px-2 md:px-3 py-1.5 md:py-1 text-sm whitespace-nowrap relative" style={mode === k ? { background: "#EEF1F3", color: NAVY } : {}}>
               {l}{badge > 0 && <span className="ml-1 text-xs px-1.5 rounded-full" style={{ background: "#9B2C2C", color: "#fff" }}>{badge}</span>}
             </button>
           ))}
         </nav>
-        <Menu profile={profile} isManager={isManager} onSelect={setMode} />
+        <div className="order-3 ml-auto md:ml-0 md:order-5">
+          <Menu profile={profile} isManager={isManager} onSelect={setMode} />
+        </div>
       </header>
 
       {error && <div className="px-4 py-2 text-sm" style={{ background: "#F7C6C6", color: "#7A1E1E" }}>読み込みエラー: {error}</div>}

@@ -108,7 +108,7 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
         </Card>
 
         {focus && (
-          <Card className="p-4 w-72 shrink-0 text-sm">
+          <Card className="p-4 w-full sm:w-72 shrink-0 text-sm">
             {focus.kind === "staff" ? (
               <>
                 <div className="flex items-center mb-2"><span className="font-medium">{focus.s.name} さんの出勤日</span><button onClick={() => setFocus(null)} className="ml-auto text-xs opacity-60">閉じる</button></div>
