@@ -144,8 +144,11 @@ export const api = {
   async setStatus(id, status) { check(await supabase.from("requests").update({ status }).eq("id", id)); },
   // 管理者が枠・時間を変えて出勤にする。元の希望は desired に残す（最初に変えたときだけ）
   async approveAs(r, slot) {
-    const desired = r.desired || { type: r.type, parts: r.parts, start_time: r.start_time, end_time: r.end_time };
-    check(await supabase.from("requests").update({ ...slot, status: "approved", desired }).eq("id", r.id));
+    const orig = r.desired || { type: r.type, parts: r.parts, start_time: r.start_time, end_time: r.end_time };
+    const t = (x) => (x ? x.slice(0, 5) : null);
+    const same = orig.type === slot.type && [...(orig.parts || [])].sort().join() === [...(slot.parts || [])].sort().join()
+      && t(orig.start_time) === t(slot.start_time) && t(orig.end_time) === t(slot.end_time);
+    check(await supabase.from("requests").update({ ...slot, status: "approved", desired: same ? null : orig }).eq("id", r.id));
   },
   // 戻す: 枠を変えていたら元の希望に戻して未定にする
   async resetRequest(r) {

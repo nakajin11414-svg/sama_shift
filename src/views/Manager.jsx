@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/data.js";
-import { WD, PARTS, PART_KEYS, STATUS, CHANGE_STATUS, TYPE, SKILLS, POSITIONS, skillShort, NAVY, LINE, RED, CLOSED_BG, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, slotText, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm } from "../lib/util.js";
+import { WD, PARTS, PART_KEYS, STATUS, CHANGE_STATUS, TYPE, SKILLS, POSITIONS, skillShort, NAVY, LINE, RED, CLOSED_BG, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, DEFAULT_WINDOWS, slotText, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm } from "../lib/util.js";
 import { Btn, Card, Tag, Gauge } from "../ui.jsx";
 
 export default function ManagerView(props) {
@@ -88,38 +88,92 @@ function EmployeeDaysOff({ data, days, mk }) {
 }
 
 // ---------- シフト管理 ----------
-// 管理者が出勤の枠を選ぶ（仕込み・ランチ・ディナーの組み合わせ、または時間指定）
+// 「出勤」で開く枠の選択。選べるのは希望の範囲内だけ
+//   枠の希望: 希望した枠（とその組み合わせ。ランチ＋ディナーなら通しも）＋ その枠の時間内での時間指定
+//   時間指定の希望: その時間内に収まる枠 ＋ その時間内での時間指定
+const STEP_MIN = 30; // 時間指定の刻み（分）
+const toMin = (t) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
+const fromMin = (n) => `${pad(Math.floor(n / 60))}:${pad(n % 60)}`;
+
+function slotChoices(orig, windows) {
+  const win = (p) => windows[p] || DEFAULT_WINDOWS[p];
+  const choices = []; // { key, label, parts }
+  const add = (ps) => {
+    const key = ps.join("+");
+    if (ps.length && !choices.some((c) => c.key === key)) choices.push({ key, parts: ps, label: slotText({ type: "parts", parts: ps }) });
+  };
+  let segments; // 時間指定できる範囲 [開始分, 終了分][]
+  if (orig.type === "custom") {
+    const s = toMin(hhmm(orig.start_time)), e = toMin(hhmm(orig.end_time));
+    const inside = PART_KEYS.filter((p) => win(p)[0] * 60 >= s && win(p)[1] * 60 <= e);
+    inside.forEach((p) => add([p]));
+    if (inside.includes("lunch") && inside.includes("dinner")) add(["lunch", "dinner"]);
+    segments = [[s, e]];
+  } else {
+    const ps = PART_KEYS.filter((p) => (orig.parts || []).includes(p));
+    ps.forEach((p) => add([p]));
+    if (ps.includes("lunch") && ps.includes("dinner")) add(["lunch", "dinner"]);
+    if (ps.includes("prep") && ps.includes("lunch")) add(["prep", "lunch"]);
+    add(ps); // 希望どおりの組み合わせ（例: 仕込み＋通し）
+    // 続いている枠（仕込み→ランチ→ディナー）はつなげて1つの範囲にする
+    segments = [];
+    ps.forEach((p, i) => {
+      const [a, b] = win(p).map((h) => h * 60);
+      const prev = ps[i - 1];
+      if (prev && PART_KEYS.indexOf(prev) === PART_KEYS.indexOf(p) - 1) segments[segments.length - 1][1] = Math.max(segments[segments.length - 1][1], b);
+      else segments.push([a, b]);
+    });
+  }
+  if (!segments.length) segments = [win("lunch").map((h) => h * 60)]; // 念のため（枠の無い希望）
+  return { choices, segments };
+}
+
 function SlotEditor({ r, windows, onDone }) {
-  const t = (h) => `${pad(Math.floor(h))}:${pad(Math.round((h % 1) * 60))}`;
-  const [mode, setMode] = useState(r.type === "custom" ? "custom" : "parts");
-  const [parts, setParts] = useState(new Set(r.type === "custom" ? [] : r.parts));
-  const [start, setStart] = useState(r.type === "custom" ? hhmm(r.start_time) : t(windows.lunch[0]));
-  const [end, setEnd] = useState(r.type === "custom" ? hhmm(r.end_time) : t(windows.lunch[1]));
+  const orig = r.desired || r; // スタッフの元の希望
+  const { choices, segments } = slotChoices(orig, windows);
+  const cur = r.type === "custom" ? null : PART_KEYS.filter((p) => (r.parts || []).includes(p)).join("+");
+  const [pick, setPick] = useState(r.type === "custom" ? "custom" : choices.some((c) => c.key === cur) ? cur : choices[0]?.key || "custom");
+  const points = (seg) => {
+    const out = new Set([seg[0], seg[1]]);
+    for (let m = Math.ceil(seg[0] / STEP_MIN) * STEP_MIN; m < seg[1]; m += STEP_MIN) out.add(m);
+    return [...out].sort((a, b) => a - b);
+  };
+  const segOf = (m) => segments.find(([a, b]) => m >= a && m < b) || segments[0];
+  const initStart = r.type === "custom" ? toMin(hhmm(r.start_time)) : segments[0][0];
+  const [start, setStart] = useState(initStart);
+  const [end, setEnd] = useState(r.type === "custom" ? toMin(hhmm(r.end_time)) : segOf(initStart)[1]);
   const [busy, setBusy] = useState(false);
-  const toggle = (p) => setParts((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; });
+  const startOpts = segments.flatMap((seg) => points(seg).filter((m) => m < seg[1]));
+  const endOpts = points(segOf(start)).filter((m) => m > start);
+  const changeStart = (m) => { setStart(m); if (end <= m || end > segOf(m)[1]) setEnd(segOf(m)[1]); };
+
   const save = async () => {
-    if (mode === "parts" && !parts.size) return alert("枠を1つ以上選んでください");
-    if (mode === "custom" && end <= start) return alert("終了は開始より後にしてください");
-    const slot = mode === "parts"
-      ? { type: "parts", parts: PART_KEYS.filter((p) => parts.has(p)), start_time: null, end_time: null }
-      : { type: "custom", parts: [], start_time: start, end_time: end };
+    const c = choices.find((x) => x.key === pick);
+    const slot = c ? { type: "parts", parts: c.parts, start_time: null, end_time: null }
+      : { type: "custom", parts: [], start_time: fromMin(start), end_time: fromMin(end) };
     setBusy(true);
     try { await api.approveAs(r, slot); onDone(); } finally { setBusy(false); }
   };
-  const off = { background: "#fff", color: NAVY, border: `1px solid ${LINE}` };
+  const chip = (on, s) => (on ? { background: s?.bg || NAVY, color: s?.fg || "#fff", outline: `2px solid ${NAVY}` } : { background: "#fff", color: NAVY, border: `1px solid ${LINE}` });
+  const sel = "border rounded px-1 py-0.5 bg-white tabular-nums";
   return (
     <div className="w-full mt-1 p-2 rounded text-xs flex flex-wrap items-center gap-2" style={{ background: "#F4F6F8" }}>
-      {PART_KEYS.map((p) => (
-        <button key={p} onClick={() => { setMode("parts"); toggle(p); }} className="px-2.5 py-1 rounded"
-          style={mode === "parts" && parts.has(p) ? { background: PARTS[p].bg, color: PARTS[p].fg, outline: `2px solid ${NAVY}` } : off}>{PARTS[p].label}</button>
+      <span className="opacity-70">出勤の枠</span>
+      {choices.map((c) => (
+        <button key={c.key} onClick={() => setPick(c.key)} className="px-2.5 py-1 rounded" style={chip(pick === c.key, slotStyle({ type: "parts", parts: c.parts }))}>{c.label}</button>
       ))}
-      <span className="opacity-50">または</span>
-      <button onClick={() => setMode("custom")} className="px-2.5 py-1 rounded" style={mode === "custom" ? { background: NAVY, color: "#fff" } : off}>時間指定</button>
-      {mode === "custom" && <span className="flex items-center gap-1"><TimeSelect value={start} onChange={setStart} />〜<TimeSelect value={end} onChange={setEnd} /></span>}
+      <button onClick={() => setPick("custom")} className="px-2.5 py-1 rounded" style={chip(pick === "custom")}>時間指定</button>
+      {pick === "custom" && (
+        <span className="flex items-center gap-1">
+          <select value={start} onChange={(e) => changeStart(Number(e.target.value))} className={sel}>{startOpts.map((m) => <option key={m} value={m}>{fromMin(m)}</option>)}</select>〜
+          <select value={end} onChange={(e) => setEnd(Number(e.target.value))} className={sel}>{endOpts.map((m) => <option key={m} value={m}>{fromMin(m)}</option>)}</select>
+        </span>
+      )}
       <span className="ml-auto flex gap-1">
         <Btn small tone="primary" disabled={busy} onClick={save}>この内容で出勤</Btn>
         <Btn small onClick={onDone}>やめる</Btn>
       </span>
+      <div className="w-full opacity-60">希望（{slotText(orig)}）の範囲内で選べます</div>
     </div>
   );
 }
@@ -243,8 +297,7 @@ function ApproveView({ data, days, mk }) {
                     {r.desired && <span className="text-xs opacity-60">（希望: {slotText(r.desired)}）</span>}
                     {ot.length > 0 && <span className="text-xs" style={{ color: "#7A4A00" }} title={ot.map((x) => `${data.stores.find((st) => st.id === x.store_id)?.name}: ${slotText(x)}`).join("、")}>他店も</span>}
                     <span className="ml-auto flex gap-1">
-                      {r.status !== "approved" && <Btn small tone="primary" onClick={() => api.setStatus(r.id, "approved")}>希望どおり出勤</Btn>}
-                      <Btn small onClick={() => setEditing(editing === r.id ? null : r.id)}>{r.status === "approved" ? "枠を変更" : "枠を変えて出勤"}</Btn>
+                      <Btn small tone={r.status === "approved" ? undefined : "primary"} onClick={() => setEditing(editing === r.id ? null : r.id)}>{r.status === "approved" ? "枠を変更" : "出勤"}</Btn>
                       {r.status !== "rejected" && <Btn small tone="danger" onClick={() => api.setStatus(r.id, "rejected")}>休み</Btn>}
                       {r.status !== "pending" && <Btn small onClick={() => api.resetRequest(r)} title={r.desired ? "元の希望に戻して未定にする" : "未定に戻す"}>戻す</Btn>}
                     </span>
