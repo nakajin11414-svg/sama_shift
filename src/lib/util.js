@@ -28,7 +28,8 @@ export const SKILLS = {
   can_mid: { label: "中堅", short: "中" },
   can_hall: { label: "ホール", short: "ホ" },
 };
-export const skillShort = (s) => Object.entries(SKILLS).filter(([k]) => s[k]).map(([, sk]) => sk.short).join("");
+export const POSITIONS = { operation: "運営", employee: "社員", part_time: "アルバイト" };
+export const skillShort =(s) => Object.entries(SKILLS).filter(([k]) => s[k]).map(([, sk]) => sk.short).join("");
 export const DEFAULT_WINDOWS = { prep: [9, 11], lunch: [11, 15], dinner: [17, 22] };
 // 基準人数の初期値（delivery / kitchen はランチ・ディナーそれぞれに必要なデリバリー・厨房の人数。prepper は仕込みの枠に必要な仕込みができる人の数）
 export const DEFAULT_RULE = { prep: 0, lunch: 0, dinner: 0, delivery: 1, kitchen: 1, prepper: 1 };

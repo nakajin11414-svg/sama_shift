@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/data.js";
-import { WD, PARTS, PART_KEYS, STATUS, TYPE, SKILLS, skillShort, NAVY, LINE, RED, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, slotText, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm } from "../lib/util.js";
+import { WD, PARTS, PART_KEYS, STATUS, TYPE, SKILLS, POSITIONS, skillShort, NAVY, LINE, RED, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, slotText, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm } from "../lib/util.js";
 import { Btn, Card, Tag, Gauge } from "../ui.jsx";
 
 export default function ManagerView(props) {
@@ -427,7 +427,7 @@ function RosterView({ data, profile }) {
         </div>
         {data.staff.length === 0 ? <div className="text-sm opacity-60">まだ登録がありません。</div> : (
           <table className="text-sm w-full">
-            <thead><tr className="text-xs opacity-70 text-left"><th className="py-1 pr-2">名前</th><th className="py-1 pr-2">所属店舗</th><th className="py-1 pr-2">できる仕事</th><th></th></tr></thead>
+            <thead><tr className="text-xs opacity-70 text-left"><th className="py-1 pr-2">名前</th><th className="py-1 pr-2">役職</th><th className="py-1 pr-2">所属店舗</th><th className="py-1 pr-2">できる仕事</th><th></th></tr></thead>
             <tbody>
               {data.staff.map((s, i) => {
                 const p = data.profiles.find((x) => x.id === s.profile_id);
@@ -439,6 +439,12 @@ function RosterView({ data, profile }) {
                         onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
                         className="border rounded px-2 py-0.5 w-32" style={{ borderColor: LINE }} />
                       <div className="text-xs opacity-60">{p ? <>LINE: {p.display_name}{p.role === "manager" && "（管理者）"}</> : <span style={{ color: "#7A4A00" }}>LINE未連携</span>}</div>
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      <select value={s.position || "part_time"} onChange={(e) => api.updateStaff(s.id, { position: e.target.value })}
+                        className="text-xs border rounded px-1 py-1 bg-white" style={{ borderColor: LINE }}>
+                        {Object.entries(POSITIONS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                      </select>
                     </td>
                     <td className="py-1.5 pr-2">
                       <div className="flex flex-wrap gap-2">
