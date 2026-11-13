@@ -251,6 +251,28 @@ function ApproveView({ data, days, mk }) {
         </Btn>
       </Card>
 
+      {(() => {
+        // 募集中の日に届いた未定の希望（出勤・休みを決めると消える）
+        const items = days.filter((d) => data.isRecruit(d.k)).flatMap((d) => data.staffInStore
+          .map((s) => ({ d, s, r: data.requests[s.id]?.[d.k] }))
+          .filter(({ r }) => r && r.status === "pending" && r.type !== "off"));
+        return items.length > 0 && (
+          <Card className="px-4 py-3 mb-4 text-sm" style={{ borderColor: RED, background: "#FDF3F3" }}>
+            <div className="font-medium mb-1" style={{ color: RED }}>募集中の日に出勤希望が {items.length} 件届いています</div>
+            <ul className="flex flex-wrap gap-x-4 gap-y-1">
+              {items.map(({ d, s, r }) => (
+                <li key={r.id}>
+                  <button onClick={() => setSel(d.k)} className="hover:underline text-left">
+                    <span className="tabular-nums">{fmt(d.k)}</span> {s.name}（{slotText(r)}）
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="text-xs opacity-60 mt-1">タップするとその日を開きます。出勤・休みを決めるとここから消えます。</div>
+          </Card>
+        );
+      })()}
+
       <EmployeeDaysOff data={data} days={days} mk={mk} />
       <TraineeCount data={data} mk={mk} />
 

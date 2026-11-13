@@ -49,6 +49,9 @@ export default function StaffView({ data, days, profile }) {
   const lockedSel = [...sel].filter((k) => locked(dayOf(k)));
   const mode = lockedSel.length === 0 ? "edit" : lockedSel.length === sel.size ? "request" : "mixed";
   const offMode = canOffice(me); // 運営・社員は休み希望を出す
+  // 募集中の日の不足: [枠, あと何人][]（基準人数 − 出勤の人数。研修中は数えない）
+  const shortOf = (d) => PART_KEYS.map((p) => [p, data.ruleFor(d)[p] - data.counts[d.k][p].n]).filter(([, n]) => n > 0);
+  const recruitDays = days.filter((d) => data.isRecruit(d.k) && !data.isClosed(d));
   // 自分の変更依頼（この店舗）
   const myChanges = (data.changes || []).filter((c) => c.staff_id === me.id && c.store_id === data.store.id);
   const pendingChange = Object.fromEntries(myChanges.filter((c) => c.status === "pending").map((c) => [c.date, c]));
@@ -134,6 +137,25 @@ export default function StaffView({ data, days, profile }) {
       )}
       <div className="text-xs opacity-70 mb-2">日付をタップで複数選択 → 下で枠を選ぶと一括{verb}</div>
 
+      {recruitDays.length > 0 && (
+        <div className="mb-2 px-3 py-2 rounded text-xs" style={{ background: "#F7E4E4", color: "#7A1E1E" }}>
+          <div className="font-medium mb-1">人が足りない日（募集中）{offMode ? "" : "　タップで選択"}</div>
+          <ul className="flex flex-col gap-0.5">
+            {recruitDays.map((d) => {
+              const sh = shortOf(d);
+              return (
+                <li key={d.k}>
+                  <button disabled={offMode || !selectable(d)} onClick={() => toggle(d.k)} className="text-left underline-offset-2 hover:underline disabled:no-underline">
+                    <span className="tabular-nums">{fmtDl(d.k)}</span>{" "}
+                    {sh.length ? sh.map(([p, n]) => `${PARTS[p].label}あと${n}人`).join("、") : "募集中"}
+                    {mine[d.k] && <span className="opacity-70">（希望済み: {slotText(mine[d.k])}）</span>}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
       <div className="grid grid-cols-7 gap-1 text-center text-xs mb-1">
         {WD.map((w, i) => <div key={w} className="py-1" style={{ color: i === 0 ? RED : i === 6 ? "#2C5282" : undefined }}>{w}</div>)}
       </div>
@@ -157,7 +179,9 @@ export default function StaffView({ data, days, profile }) {
                 </span>
               )}
               {ot.length > 0 && <span className="text-xs opacity-60 truncate" title={ot.map((x) => data.stores.find((s) => s.id === x.store_id)?.name).join("、")}>他店{ot.some((x) => x.status === "approved") ? "✓" : ""}</span>}
-              {data.isRecruit(day.k) && !closed && !r && ot.length === 0 && <span className="mt-auto text-xs" style={{ color: RED }}>募集中</span>}
+              {data.isRecruit(day.k) && !closed && !r && ot.length === 0 && (
+                <span className="mt-auto text-xs leading-tight" style={{ color: RED }}>募集{shortOf(day).length > 0 && <span className="block">{shortOf(day).map(([p, n]) => `${PARTS[p].short}${n}`).join(" ")}</span>}</span>
+              )}
               {pendingChange[day.k] && <span className="text-xs truncate" style={{ color: "#7A4A00" }}>依頼中</span>}
             </button>
           );
