@@ -28,11 +28,25 @@ export function useShiftData(ym, storeId) {
     ]);
     const err = [stores, staff, staffStores, requests, daySettings, pubs, profiles, ann, logs, monthSet, changes, quota].find((r) => r.error)?.error;
     if (err) return setError(err.message);
+    // 研修中の人の出勤回数（月をまたいで、表示中の月の終わりまで。同じ日は1回）
+    const trainees = staff.data.filter((s) => s.position === "trainee").map((s) => s.id);
+    const [setting, tr] = await Promise.all([
+      supabase.from("settings").select("training_shifts").eq("id", 1).maybeSingle(),
+      trainees.length
+        ? supabase.from("requests").select("staff_id, date").in("staff_id", trainees).eq("status", "approved").neq("type", "off").lte("date", last)
+        : Promise.resolve({ data: [] }),
+    ]);
+    const err2 = [setting, tr].find((r) => r.error)?.error;
+    if (err2) return setError(err2.message);
+    const trainingDone = {};
+    for (const r of tr.data) (trainingDone[r.staff_id] ||= new Set()).add(r.date);
     setError(null);
     setRaw({
       stores: stores.data, staff: staff.data, staffStores: staffStores.data, requests: requests.data,
       daySettings: daySettings.data, pubs: pubs.data, profiles: profiles.data, announcements: ann.data, logs: logs.data,
       monthSettings: monthSet.data, changes: changes.data, employeeDaysOff: quota.data?.employee_days_off ?? null,
+      trainingShifts: setting.data?.training_shifts ?? 10,
+      trainingDone: Object.fromEntries(Object.entries(trainingDone).map(([k, v]) => [k, v.size])),
     });
   }, [first, last, mk]);
 
@@ -43,7 +57,7 @@ export function useShiftData(ym, storeId) {
   }, [reload]);
   useEffect(() => {
     const ch = supabase.channel("shift-changes");
-    for (const t of ["requests", "day_settings", "publications", "staff", "staff_stores", "stores", "profiles", "announcements", "work_logs", "month_settings", "change_requests", "month_quotas"]) {
+    for (const t of ["requests", "day_settings", "publications", "staff", "staff_stores", "stores", "profiles", "announcements", "work_logs", "month_settings", "change_requests", "month_quotas", "settings"]) {
       ch.on("postgres_changes", { event: "*", schema: "public", table: t }, () => reload());
     }
     ch.subscribe();
@@ -99,6 +113,7 @@ export function useShiftData(ym, storeId) {
       const c = counts[day.k] = {};
       for (const p of ["prep", "lunch", "dinner"]) c[p] = { n: 0, pending: 0, onlyDelivery: 0, onlyKitchen: 0, both: 0, prepper: 0 };
       for (const s of staffInStore) {
+        if (s.position === "trainee") continue; // 研修中は人数に数えない
         const r = requests[s.id]?.[day.k];
         if (!r || r.status === "rejected") continue;
         for (const p of ["prep", "lunch", "dinner"]) {
@@ -158,6 +173,7 @@ export const api = {
   async setDayType(storeId, date, day_type) { check(await supabase.from("day_settings").upsert({ store_id: storeId, date, day_type }, { onConflict: "store_id,date" })); },
   // 締切（null で解除）
   // 社員の休みの日数（null で解除）
+  async setTrainingShifts(n) { check(await supabase.from("settings").update({ training_shifts: n }).eq("id", 1)); },
   async setEmployeeDaysOff(month, n) {
     check(n == null ? await supabase.from("month_quotas").delete().eq("month", month)
                     : await supabase.from("month_quotas").upsert({ month, employee_days_off: n }, { onConflict: "month" }));

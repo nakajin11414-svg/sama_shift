@@ -110,9 +110,9 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
                   const need = fd ? data.ruleFor(fd)[p] : 0;
                   return (
                     <div key={p} className="mb-3">
-                      <div className="flex items-center gap-2 mb-1"><Tag s={PARTS[p]}>{PARTS[p].label}</Tag><span className="text-xs tabular-nums opacity-70">{list.length}/{need}人</span></div>
+                      <div className="flex items-center gap-2 mb-1"><Tag s={PARTS[p]}>{PARTS[p].label}</Tag><span className="text-xs tabular-nums opacity-70">{list.filter(({ s }) => s.position !== "trainee").length}/{need}人</span></div>
                       {list.length === 0 ? <div className="text-xs opacity-50 pl-1">なし</div>
-                        : <ul className="pl-1">{list.map(({ s, r }) => <li key={s.id} className="py-0.5 flex gap-2"><span>{s.name}</span><span className="text-xs opacity-60 self-center">{skillShort(s)}</span>{r.type === "custom" && <span className="text-xs opacity-60 self-center">{slotText(r)}</span>}</li>)}</ul>}
+                        : <ul className="pl-1">{list.map(({ s, r }) => <li key={s.id} className="py-0.5 flex gap-2"><span>{s.name}{s.position === "trainee" && <span className="text-xs opacity-60">（研修）</span>}</span><span className="text-xs opacity-60 self-center">{skillShort(s)}</span>{r.type === "custom" && <span className="text-xs opacity-60 self-center">{slotText(r)}</span>}</li>)}</ul>}
                     </div>
                   );
                 })}

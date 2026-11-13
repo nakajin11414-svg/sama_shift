@@ -20,7 +20,8 @@ export const canOffice = (s) => OFFICE_POSITIONS.includes(s?.position);
 export const OFF_WISH = { label: "休み希望", short: "休", bg: "#F7E4E4", fg: "#7A1E1E" };
 export const isWork = (r) => !!r && r.type !== "off";
 // 実働時間を出すのはアルバイトだけ
-export const isPartTime = (s) => (s?.position || "part_time") === "part_time";
+// （研修中もアルバイトとして実働時間を出す）
+export const isPartTime = (s) => ["part_time", "trainee"].includes(s?.position || "part_time");
 export const STATUS = {
   pending: { label: "未定", bg: "#EEF1F3", fg: "#5A6B7A" },
   approved: { label: "出勤", bg: "#CFE8D8", fg: "#0F3A24" },
@@ -44,7 +45,7 @@ export const SKILLS = {
   can_mid: { label: "中堅", short: "中" },
   can_hall: { label: "ホール", short: "ホ" },
 };
-export const POSITIONS = { operation: "運営", employee: "社員", part_time: "アルバイト" };
+export const POSITIONS = { operation: "運営", employee: "社員", part_time: "アルバイト", trainee: "研修中" };
 export const skillShort =(s) => Object.entries(SKILLS).filter(([k]) => s[k]).map(([, sk]) => sk.short).join("");
 export const DEFAULT_WINDOWS = { prep: [9, 11], lunch: [11, 15], dinner: [17, 22] };
 // 基準人数の初期値（delivery / kitchen はランチ・ディナーそれぞれに必要なデリバリー・厨房の人数。prepper は仕込みの枠に必要な仕込みができる人の数）

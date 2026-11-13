@@ -44,6 +44,41 @@ function PartGauge({ c, rule, part, compact }) {
 }
 
 
+// 研修中の人の研修残り（全店舗・月をまたいで、表示中の月の終わりまでの出勤（承諾済み）の日数で数える）
+function TraineeCount({ data, mk }) {
+  const trainees = data.staff.filter((s) => s.position === "trainee");
+  if (!trainees.length) return null;
+  const total = data.trainingShifts;
+  return (
+    <Card className="px-4 py-3 mb-4 text-sm">
+      <div className="flex flex-wrap items-center gap-2 mb-2">
+        <span>研修中</span>
+        <label className="flex items-center gap-1 text-xs">
+          研修の回数
+          <input type="number" min={1} key={total} defaultValue={total}
+            onBlur={(e) => { const v = Math.max(1, Number(e.target.value) || 1); if (v !== total) api.setTrainingShifts(v); else e.target.value = total; }}
+            onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+            className="w-14 border rounded px-1 py-0.5 tabular-nums" style={{ borderColor: LINE }} />回
+        </label>
+        <span className="text-xs opacity-60">全店舗の出勤（承諾済み）を最初の出勤から{mk.replace("-", "年")}月末まで数えます。研修中は出勤の人数に数えません</span>
+      </div>
+      <div className="flex flex-wrap gap-x-5 gap-y-1">
+        {trainees.map((s) => {
+          const done = data.trainingDone[s.id] || 0;
+          const left = total - done;
+          return (
+            <span key={s.id} className="tabular-nums">
+              {s.name}：{left > 0 ? <>研修残り<b className="mx-0.5">{left}</b>回</>
+                : <span style={{ color: "#0F3A24" }}>研修終了（スタッフ名簿で役職を変更してください）</span>}
+              <span className="text-xs opacity-50 ml-1">出勤{done}回</span>
+            </span>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 // 社員の休み残り（全店舗の出勤で数える。休み = その月で出勤（承諾済み）がない日）
 function EmployeeDaysOff({ data, days, mk }) {
   const quota = data.employeeDaysOff;
@@ -217,6 +252,7 @@ function ApproveView({ data, days, mk }) {
       </Card>
 
       <EmployeeDaysOff data={data} days={days} mk={mk} />
+      <TraineeCount data={data} mk={mk} />
 
       <div className="flex flex-wrap gap-4 items-start">
         <Card className="flex-1 min-w-[min(20rem,100%)] overflow-x-auto">
@@ -309,6 +345,7 @@ function ApproveView({ data, days, mk }) {
                   <li key={s.id} className="flex flex-wrap items-center gap-2 py-2 text-sm" style={{ opacity: r.status === "rejected" ? 0.6 : 1 }}>
                     <span className="w-24 truncate">{s.name}
                       <span className="ml-1 text-xs opacity-60">{skillShort(s)}</span>
+                      {s.position === "trainee" && <span className="ml-1 text-xs px-1 rounded" style={{ background: "#F6EBD6", color: "#7A4A00" }} title="研修中は出勤の人数に数えません">研修</span>}
                     </span>
                     <Tag s={slotStyle(r)}>{slotText(r)}</Tag>
                     <Tag s={STATUS[r.status]}>{STATUS[r.status].label}</Tag>
