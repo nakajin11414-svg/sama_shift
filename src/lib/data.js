@@ -258,7 +258,29 @@ export const api = {
     return data;
   },
   async updateAnnouncement(id, patch) { check(await supabase.from("announcements").update(patch).eq("id", id)); },
-  async deleteAnnouncement(id) { check(await supabase.from("announcements").delete().eq("id", id)); },
+  async deleteAnnouncement(a) {
+    check(await supabase.from("announcements").delete().eq("id", a.id));
+    await api.removeMedia((a.attachments || []).map((x) => x.path));
+  },
+  // お知らせの画像・動画（Storage の announcements バケット）
+  async uploadMedia(file) {
+    const ext = (file.name.split(".").pop() || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const path = `${crypto.randomUUID()}${ext ? `.${ext}` : ""}`;
+    const { error } = await supabase.storage.from("announcements").upload(path, file, { contentType: file.type, upsert: false });
+    if (error) { alert(`${file.name} をアップロードできませんでした: ${error.message}`); throw error; }
+    return { path, type: file.type.startsWith("video/") ? "video" : "image", name: file.name };
+  },
+  async removeMedia(paths) {
+    if (!paths.length) return;
+    await supabase.storage.from("announcements").remove(paths); // 失敗しても表示には影響しないので無視
+  },
+  // 表示用の一時URL（1時間有効）: { path: url }
+  async mediaUrls(paths) {
+    if (!paths.length) return {};
+    const { data, error } = await supabase.storage.from("announcements").createSignedUrls(paths, 3600);
+    if (error) return {};
+    return Object.fromEntries((data || []).filter((x) => x.signedUrl).map((x) => [x.path, x.signedUrl]));
+  },
   async markAnnouncementsRead(profileId) { check(await supabase.from("profiles").update({ announcements_read_at: new Date().toISOString() }).eq("id", profileId)); },
   // 実働時間
   async setDayWork(storeId, date, work_hours, delivery) { check(await supabase.from("day_settings").upsert({ store_id: storeId, date, work_hours, delivery }, { onConflict: "store_id,date" })); },

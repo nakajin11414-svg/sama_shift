@@ -65,13 +65,19 @@ Deno.serve(async (req) => {
     let announcementId: string | null = null;
     if (kind === "announcement") {
       if (!body.announcement_id) return json({ error: "announcement_id が必要です" }, 400);
-      const { data: a, error } = await admin.from("announcements").select("id, title, body, store_id").eq("id", body.announcement_id).maybeSingle();
+      const { data: a, error } = await admin.from("announcements").select("id, title, body, store_id, attachments").eq("id", body.announcement_id).maybeSingle();
       if (error) return json({ error: "お知らせの取得に失敗しました", detail: error.message }, 500);
       if (!a) return json({ error: "お知らせが見つかりません" }, 404);
       announcementId = a.id;
       storeId = a.store_id;
       const b = (a.body ?? "").trim();
       text = `【お知らせ】${a.title}${b ? `\n\n${b.length > 300 ? `${b.slice(0, 300)}…` : b}` : ""}`;
+      // 画像・動画はLINEには送らず、アプリで見てもらう
+      const media = Array.isArray(a.attachments) ? a.attachments : [];
+      if (media.length) {
+        const nImg = media.filter((m: { type?: string }) => m.type !== "video").length, nVid = media.length - nImg;
+        text += `\n\n（${[nImg && `画像${nImg}件`, nVid && `動画${nVid}件`].filter(Boolean).join("・")}があります。アプリのお知らせで確認してください）`;
+      }
     } else if (kind === "publish") {
       if (!body.store_id || !body.month) return json({ error: "store_id と month が必要です" }, 400);
       const { data: st } = await admin.from("stores").select("name").eq("id", body.store_id).maybeSingle();
