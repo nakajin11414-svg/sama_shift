@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { WD, PARTS, PART_KEYS, NAVY, LINE, CLOSED_BG, OFFICE, isPartTime, fmt, skillShort, slotText, slotShort, slotStyle, covers, dayColor, workHours, fmtHours } from "../lib/util.js";
+import { useEffect, useMemo, useState } from "react";
+import { usePayPeriodData } from "../lib/data.js";
+import { WD, PARTS, PART_KEYS, NAVY, LINE, CLOSED_BG, OFFICE, isPartTime, fmt, skillShort, slotText, slotShort, slotStyle, covers, dayColor, workHours, fmtHours, dkey, payPeriodOfMonth } from "../lib/util.js";
 import { Card, Tag, DualScroll } from "../ui.jsx";
 
 export default function PublishedView({ data, days, mk, profile, isManager }) {
@@ -9,13 +10,28 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
   const S = data.store;
   const myRow = data.staff.find((s) => s.profile_id === profile.id);
 
+  // 今期（表示月を支給月とする給与期間）の実働。アルバイトだけ
+  const [py, pm] = mk.split("-").map(Number);
+  const period = useMemo(() => payPeriodOfMonth({ y: py, m: pm - 1 }, data.payClosingDay, data.payDay), [py, pm, data.payClosingDay, data.payDay]);
+  const { pd } = usePayPeriodData(isManager || (myRow && isPartTime(myRow)) ? period : null, data.stores);
+  const periodWork = (staffId) => {
+    if (!pd) return null;
+    const t = new Date(), today = dkey(t.getFullYear(), t.getMonth(), t.getDate());
+    const rs = pd.requests.filter((r) => r.staff_id === staffId);
+    return {
+      period,
+      hours: rs.reduce((a, r) => a + workHours(pd.workOf(r)), 0),
+      missing: new Set(rs.filter((r) => r.date <= today && !pd.workOf(r)).map((r) => r.date)).size, // 今日までで実働が未入力の日
+    };
+  };
+
   // 自分の全店舗の確定シフト（公開済みの店舗のみ）
   const myAll = myRow ? days.flatMap((d) => (data.requestsAll[myRow.id]?.[d.k] || [])
     .filter((r) => r.status === "approved" && data.pubs.some((p) => p.store_id === r.store_id))
     .map((r) => ({ d, r, store: data.stores.find((s) => s.id === r.store_id) }))) : [];
 
   // 自分の出勤日（全店舗）は店舗の表の下に常に出す
-  const mine = myRow && <MyShifts data={data} myRow={myRow} myAll={myAll} mk={mk} />;
+  const mine = myRow && <MyShifts data={data} myRow={myRow} myAll={myAll} mk={mk} pw={isPartTime(myRow) ? periodWork(myRow.id) : null} />;
 
   if (!data.published && !(isManager && preview)) {
     return (
@@ -102,6 +118,7 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
                   ))}
                 </ul>
                 <div className="mt-2 text-xs opacity-70">計 {byStaff(focus.s).length} 日</div>
+                {isPartTime(focus.s) && (isManager || focus.s.id === myRow?.id) && <PeriodWork pw={periodWork(focus.s.id)} />}
               </>
             ) : (
               <>
@@ -138,7 +155,19 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
 }
 
 // 自分の出勤日（公開済みの全店舗分）
-function MyShifts({ data, myRow, myAll, mk }) {
+// 今期の実働「今期の実働 48.5h（11/16〜12/15、12/25支給）未入力 3日」
+function PeriodWork({ pw }) {
+  if (!pw) return null;
+  return (
+    <div className="mt-2 text-xs px-2 py-1.5 rounded tabular-nums" style={{ background: "#F4F6F8" }}>
+      今期の実働 <b className="text-sm">{fmtHours(pw.hours)}h</b>
+      <span className="opacity-70">（{pw.period.short}）</span>
+      {pw.missing > 0 && <span className="ml-1" style={{ color: "#7A4A00" }}>未入力 {pw.missing}日</span>}
+    </div>
+  );
+}
+
+function MyShifts({ data, myRow, myAll, mk, pw }) {
   const multi = data.stores.length > 1;
   const pt = isPartTime(myRow); // 実働時間はアルバイトだけ
   const total = myAll.reduce((a, x) => a + workHours(data.workOf(x.r)), 0);
@@ -160,7 +189,8 @@ function MyShifts({ data, myRow, myAll, mk }) {
           ))}
         </ul>
       )}
-      <div className="mt-2 text-xs opacity-70">計 {myAll.length} 日{pt && myAll.some((x) => data.workOf(x.r)) && `　実働合計 ${fmtHours(total)}h`}</div>
+      <div className="mt-2 text-xs opacity-70">計 {myAll.length} 日{pt && myAll.some((x) => data.workOf(x.r)) && `　${mk.replace("-", "年")}月の実働合計 ${fmtHours(total)}h`}</div>
+      {pt && <PeriodWork pw={pw} />}
     </Card>
   );
 }

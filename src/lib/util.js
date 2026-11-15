@@ -75,6 +75,55 @@ export const fmt = (k) => {
   return `${m}/${d}(${WD[new Date(y, m - 1, d).getDay()]})`;
 };
 export const hhmm = (t) => (t ? t.slice(0, 5) : "");
+
+// ---------- 給与期間（締め日の翌日〜次の締め日） ----------
+// 締め日 closingDay は 1〜28。28 は「月末締め」として扱う（2月や30日の月でも破綻しない）
+// 支給日 payDay は 1〜31（その月に無い日は月末）。支給日が締め日以前なら、支給は締めの翌月
+// supabase/migrations/0016_pay_period.sql の pay_period_key と同じ計算
+export const DEFAULT_PAY = { closingDay: 15, payDay: 25 };
+const lastDayOf = (y, m0) => new Date(y, m0 + 1, 0).getDate();
+const isEom = (c) => c >= 28;
+const md = (k) => { const [, m, d] = k.split("-").map(Number); return `${m}/${d}`; };
+// 期間の終わりの月（y, m0）から期間を作る
+function payPeriodByEnd(y, m0, closingDay, payDay) {
+  const e = new Date(y, m0, 1), ey = e.getFullYear(), em = e.getMonth();
+  const endOf = (yy, mm) => (isEom(closingDay) ? lastDayOf(yy, mm) : closingDay);
+  const p = new Date(ey, em - 1, 1), py = p.getFullYear(), pm = p.getMonth();
+  const s = new Date(py, pm, endOf(py, pm) + 1);
+  const start = dkey(s.getFullYear(), s.getMonth(), s.getDate());
+  const end = dkey(ey, em, endOf(ey, em));
+  const pay = new Date(ey, em + (isEom(closingDay) || payDay <= closingDay ? 1 : 0), 1);
+  const payY = pay.getFullYear(), payM = pay.getMonth();
+  const payD = Math.min(payDay, lastDayOf(payY, payM));
+  const key = mkey(payY, payM);
+  return {
+    key, start, end, payMonth: key, payDate: dkey(payY, payM, payD), endYm: { y: ey, m: em }, closingDay, payDay,
+    label: `${payM + 1}月${payD}日支給分（${md(start)}〜${md(end)}）`,
+    short: `${md(start)}〜${md(end)}、${payM + 1}/${payD}支給`,
+  };
+}
+// その日が属する期間
+export function payPeriodFor(dateKey, closingDay = DEFAULT_PAY.closingDay, payDay = DEFAULT_PAY.payDay) {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  return payPeriodByEnd(y, m - 1 + (isEom(closingDay) || d <= closingDay ? 0 : 1), closingDay, payDay);
+}
+// ym（{y, m: 0始まり}）を支給月とする期間
+export function payPeriodOfMonth(ym, closingDay = DEFAULT_PAY.closingDay, payDay = DEFAULT_PAY.payDay) {
+  return payPeriodByEnd(ym.y, ym.m - (isEom(closingDay) || payDay <= closingDay ? 1 : 0), closingDay, payDay);
+}
+// 前後の期間（n = ±1）
+export const shiftPayPeriod = (period, n) => payPeriodByEnd(period.endYm.y, period.endYm.m + n, period.closingDay, period.payDay);
+// 期間の日付一覧（monthDays と同じ形 { k, d, w, m }）
+export function periodDays(period) {
+  const out = [];
+  const [y, m, d] = period.start.split("-").map(Number);
+  for (let t = new Date(y, m - 1, d); ; t.setDate(t.getDate() + 1)) {
+    const k = dkey(t.getFullYear(), t.getMonth(), t.getDate());
+    out.push({ k, d: t.getDate(), w: t.getDay(), m: t.getMonth() + 1 });
+    if (k >= period.end) break;
+  }
+  return out;
+}
 export const toHour = (t) => {
   const [h, mm] = (t || "0:0").split(":").map(Number);
   return h + (mm || 0) / 60;

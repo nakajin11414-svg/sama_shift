@@ -1,6 +1,61 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase.js";
-import { autoWork, covers, dkey, holidayName, mkey, monthDays, DEFAULT_RULE, DEFAULT_WINDOWS } from "./util.js";
+import { autoWork, covers, dkey, holidayName, mkey, monthDays, DEFAULT_RULE, DEFAULT_WINDOWS, DEFAULT_PAY } from "./util.js";
+
+// 給与期間（2か月にまたがる）の実働用データ。全店舗の承認済みシフトと実働、日ごとの実働入力、締め確定を読む
+//   period = payPeriodFor などの戻り値（null なら読まない）
+//   stores = 店舗一覧（枠の時間帯に使う）
+export function usePayPeriodData(period, stores) {
+  const [raw, setRaw] = useState(null);
+  const [error, setError] = useState(null);
+  const start = period?.start, end = period?.end;
+
+  const reload = useCallback(async () => {
+    if (!start) { setRaw(null); return; }
+    const [requests, logs, daySettings, locks] = await Promise.all([
+      supabase.from("requests").select("*").eq("status", "approved").neq("type", "off").gte("date", start).lte("date", end),
+      supabase.from("work_logs").select("*"),
+      supabase.from("day_settings").select("store_id, date, work_hours, delivery").gte("date", start).lte("date", end),
+      supabase.from("pay_period_locks").select("*"),
+    ]);
+    const err = [requests, logs, daySettings, locks].find((r) => r.error)?.error;
+    if (err) return setError(err.message);
+    setError(null);
+    setRaw({ start, requests: requests.data, logs: logs.data, daySettings: daySettings.data, locks: locks.data });
+  }, [start, end]);
+
+  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    window.addEventListener("shift-refresh", reload);
+    return () => window.removeEventListener("shift-refresh", reload);
+  }, [reload]);
+  useEffect(() => {
+    if (!start) return;
+    const ch = supabase.channel(`pay-period-${start}`);
+    for (const t of ["requests", "work_logs", "pay_period_locks", "day_settings"]) {
+      ch.on("postgres_changes", { event: "*", schema: "public", table: t }, () => reload());
+    }
+    ch.subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [reload, start]);
+
+  const view = useMemo(() => {
+    if (!raw || raw.start !== start) return null; // 期間を切り替えた直後は古いデータを出さない
+    const logs = Object.fromEntries(raw.logs.map((l) => [l.request_id, l]));
+    const daySet = {}; // store_id -> date -> day_settings
+    for (const d of raw.daySettings) (daySet[d.store_id] ||= {})[d.date] = d;
+    const windowsOf = (sid) => ({ ...DEFAULT_WINDOWS, ...((stores || []).find((s) => s.id === sid)?.windows || {}) });
+    const workOf = (r) => {
+      const w = autoWork(r, daySet[r.store_id]?.[r.date]?.work_hours, windowsOf(r.store_id), logs[r.id]);
+      return w && logs[r.id] ? { ...w, individual: true } : w;
+    };
+    const locked = (storeId) => raw.locks.some((l) => l.period_key === period.key && l.store_id === storeId);
+    const lockOf = (storeId) => raw.locks.find((l) => l.period_key === period.key && l.store_id === storeId) || null;
+    return { requests: raw.requests, logs, daySet, windowsOf, workOf, locked, lockOf };
+  }, [raw, start, stores, period?.key]); // eslint-disable-line
+
+  return { pd: view, error, reload };
+}
 
 // 月と店舗ごとのデータをまとめて取得し、変更があれば自動で再取得する
 export function useShiftData(ym, storeId) {
@@ -31,7 +86,7 @@ export function useShiftData(ym, storeId) {
     // 研修中の人の出勤回数（月をまたいで、表示中の月の終わりまで。同じ日は1回）
     const trainees = staff.data.filter((s) => s.position === "trainee").map((s) => s.id);
     const [setting, tr] = await Promise.all([
-      supabase.from("settings").select("training_shifts, line_bot_id").eq("id", 1).maybeSingle(),
+      supabase.from("settings").select("training_shifts, line_bot_id, pay_closing_day, pay_day").eq("id", 1).maybeSingle(),
       trainees.length
         ? supabase.from("requests").select("staff_id, date").in("staff_id", trainees).eq("status", "approved").neq("type", "off").lte("date", last)
         : Promise.resolve({ data: [] }),
@@ -47,6 +102,8 @@ export function useShiftData(ym, storeId) {
       monthSettings: monthSet.data, changes: changes.data, employeeDaysOff: quota.data?.employee_days_off ?? null,
       trainingShifts: setting.data?.training_shifts ?? 10,
       lineBotId: setting.data?.line_bot_id || "",
+      payClosingDay: setting.data?.pay_closing_day ?? DEFAULT_PAY.closingDay,
+      payDay: setting.data?.pay_day ?? DEFAULT_PAY.payDay,
       trainingDone: Object.fromEntries(Object.entries(trainingDone).map(([k, v]) => [k, v.size])),
     });
   }, [first, last, mk]);
@@ -283,6 +340,14 @@ export const api = {
   },
   async markAnnouncementsRead(profileId) { check(await supabase.from("profiles").update({ announcements_read_at: new Date().toISOString() }).eq("id", profileId)); },
   // 実働時間
+  // 給与期間（締め日・支給日）と締め確定
+  async setPaySettings(patch) { check(await supabase.from("settings").update(patch).eq("id", 1)); },
+  async lockPayPeriod(periodKey, storeId, on) {
+    if (on) {
+      const { data: { user } } = await supabase.auth.getUser();
+      check(await supabase.from("pay_period_locks").upsert({ period_key: periodKey, store_id: storeId, locked_at: new Date().toISOString(), locked_by: user?.id || null }));
+    } else check(await supabase.from("pay_period_locks").delete().eq("period_key", periodKey).eq("store_id", storeId));
+  },
   async setDayWork(storeId, date, work_hours, delivery) { check(await supabase.from("day_settings").upsert({ store_id: storeId, date, work_hours, delivery }, { onConflict: "store_id,date" })); },
   async upsertWorkLog(row) { check(await supabase.from("work_logs").upsert({ ...row, updated_at: new Date().toISOString() }, { onConflict: "request_id" })); },
   async deleteWorkLog(requestId) { check(await supabase.from("work_logs").delete().eq("request_id", requestId)); },

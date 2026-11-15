@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import { api, notifyResult } from "../lib/data.js";
-import { WD, PARTS, PART_KEYS, STATUS, CHANGE_STATUS, OFFICE, OFF_WISH, canOffice, isPartTime, TYPE, SKILLS, POSITIONS, skillShort, NAVY, LINE, RED, CLOSED_BG, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, DEFAULT_WINDOWS, slotText, slotShort, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm, hourLabel } from "../lib/util.js";
+import { useEffect, useMemo, useState } from "react";
+import { api, notifyResult, usePayPeriodData } from "../lib/data.js";
+import { WD, PARTS, PART_KEYS, STATUS, CHANGE_STATUS, OFFICE, OFF_WISH, canOffice, isPartTime, TYPE, SKILLS, POSITIONS, skillShort, NAVY, LINE, RED, CLOSED_BG, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, DEFAULT_WINDOWS, slotText, slotShort, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm, hourLabel, payPeriodOfMonth, shiftPayPeriod, periodDays } from "../lib/util.js";
 import { Btn, Card, Tag, Gauge, DualScroll } from "../ui.jsx";
 
 export default function ManagerView(props) {
@@ -650,77 +650,232 @@ function ChangesView({ data, days }) {
 const HALF_HOURS = Array.from({ length: 49 }, (_, i) => i / 2); // 0〜24時、30分刻み
 const DELIVERY = { main: "メインデリバリー", second: "二台目デリバリー" };
 
-function WorkLogView({ data, days, mk }) {
-  const [dayEdit, setDayEdit] = useState(null); // day
+// 給与期間（締め日の翌日〜次の締め日）で実働を管理する。希望・承認・公開は暦の月のまま
+function WorkLogView({ data, mk }) {
+  const [y, m] = mk.split("-").map(Number);
+  const C = data.payClosingDay, P = data.payDay;
+  // 初期値はヘッダーの表示月を支給月とする期間。月や締め日を変えたら追従する
+  const base = useMemo(() => payPeriodOfMonth({ y, m: m - 1 }, C, P), [y, m, C, P]);
+  const [period, setPeriod] = useState(base);
+  useEffect(() => { setPeriod(base); }, [base]);
+  const [allStores, setAllStores] = useState(false);
+  const [dayEdit, setDayEdit] = useState(null); // { day, storeId }
+  const [busy, setBusy] = useState(false);
+  const { pd, error } = usePayPeriodData(period, data.stores);
+  const days = useMemo(() => periodDays(period), [period]);
   const S = data.store;
-  const approved = (sid, k) => { const r = data.requests[sid]?.[k]; return r && r.status === "approved" ? r : null; };
-  const staff = data.staffInStore.filter((s) => isPartTime(s) && days.some((d) => approved(s.id, d.k))); // 実働時間はアルバイトだけ
-  const hoursOf = (r) => (r ? workHours(data.workOf(r)) : 0);
-  const total = (s) => days.reduce((a, d) => a + hoursOf(approved(s.id, d.k)), 0);
-  const deliveries = (s, role) => days.filter((d) => data.daySet[d.k]?.delivery?.[role] === s.id).length;
+  const multiStore = data.stores.length > 1;
   const cellW = 56;
 
-  const csv = () => {
-    const lines = [["名前", ...days.map((d) => `${d.d}(${WD[d.w]})`), "合計時間", `${DELIVERY.main}(回)`, `${DELIVERY.second}(回)`]];
-    for (const s of staff) lines.push([s.name, ...days.map((d) => { const r = approved(s.id, d.k); return r && data.workOf(r) ? fmtHours(hoursOf(r)) : ""; }), fmtHours(total(s)), deliveries(s, "main"), deliveries(s, "second")]);
-    const blob = new Blob(["﻿" + lines.map((l) => l.join(",")).join("\n")], { type: "text/csv" });
-    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `実働時間_${S.name}_${mk}.csv`; a.click();
+  // 対象のシフト: 承認済み・アルバイト（研修中を含む）・表示中の店舗（全店舗で見るなら全店舗）
+  const staffById = Object.fromEntries(data.staff.map((s) => [s.id, s]));
+  const reqs = (pd?.requests || []).filter((r) => isPartTime(staffById[r.staff_id]) && (allStores || r.store_id === S.id));
+  const idx = {}; // staff_id -> store_id -> date -> request
+  for (const r of reqs) ((idx[r.staff_id] ||= {})[r.store_id] ||= {})[r.date] = r;
+  const hoursOf = (r) => (r && pd ? workHours(pd.workOf(r)) : 0);
+
+  // 行: スタッフごと。全店舗で見るときは店舗別の内訳行（2店舗以上なら合計行も）
+  const rows = [];
+  for (const s of data.staff) {
+    const byStore = idx[s.id];
+    if (!byStore) continue;
+    if (!allStores) { rows.push({ key: s.id, s, storeId: S.id, first: true }); continue; }
+    const sts = data.stores.filter((st) => byStore[st.id]);
+    sts.forEach((st, i) => rows.push({ key: `${s.id}:${st.id}`, s, storeId: st.id, storeName: st.name, first: i === 0 }));
+    if (sts.length > 1) rows.push({ key: `${s.id}:total`, s, total: true, storeIds: sts.map((st) => st.id) });
+  }
+  const reqOf = (row, k) => idx[row.s.id]?.[row.storeId]?.[k] || null;
+  const reqsOfRow = (row) => (row.total ? row.storeIds : [row.storeId]).flatMap((sid) => Object.values(idx[row.s.id]?.[sid] || {}));
+  const rowHours = (row) => reqsOfRow(row).reduce((a, r) => a + hoursOf(r), 0);
+  const rowDays = (row) => new Set(reqsOfRow(row).map((r) => r.date)).size;
+  const deliveries = (row, role) => (row.total ? row.storeIds : [row.storeId])
+    .reduce((a, sid) => a + days.filter((d) => pd?.daySet[sid]?.[d.k]?.delivery?.[role] === row.s.id).length, 0);
+
+  // 期間全体の集計
+  const totalHours = reqs.reduce((a, r) => a + hoursOf(r), 0);
+  const workDays = new Set(reqs.map((r) => `${r.staff_id}|${r.date}`)).size;
+  const entered = pd ? reqs.filter((r) => pd.workOf(r)).length : 0;
+
+  const lockedS = !!pd?.locked(S.id);
+  const lockInfo = pd?.lockOf(S.id);
+  const toggleLock = async () => {
+    const msg = lockedS
+      ? `${period.label} の締め確定を解除しますか？\n${S.name} の実働をまた修正できるようになります。`
+      : `${period.label} を締め確定しますか？\n${S.name} のこの期間の実働は、解除するまで修正できなくなります。`;
+    if (!confirm(msg)) return;
+    setBusy(true);
+    try { await api.lockPayPeriod(period.key, S.id, !lockedS); } finally { setBusy(false); }
   };
+
+  const savePay = (key, v, min, max, cur) => {
+    const n = Math.max(min, Math.min(max, Math.round(Number(v)) || cur));
+    if (n !== cur) api.setPaySettings({ [key]: n });
+    return n;
+  };
+
+  const csv = () => {
+    const q = (x) => { const t = String(x ?? ""); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+    const lines = [
+      [`${period.label}`, allStores ? "全店舗" : S.name],
+      ["名前", ...(allStores ? ["店舗"] : []), ...days.map((d) => `${d.m}/${d.d}(${WD[d.w]})`), "合計時間", "出勤日数", `${DELIVERY.main}(回)`, `${DELIVERY.second}(回)`],
+    ];
+    for (const row of rows) {
+      const cells = days.map((d) => {
+        const rs = row.total ? row.storeIds.map((sid) => idx[row.s.id]?.[sid]?.[d.k]).filter(Boolean) : [reqOf(row, d.k)].filter(Boolean);
+        return rs.some((r) => pd.workOf(r)) ? fmtHours(rs.reduce((a, r) => a + hoursOf(r), 0)) : "";
+      });
+      lines.push([row.s.name, ...(allStores ? [row.total ? "合計" : row.storeName] : []), ...cells, fmtHours(rowHours(row)), rowDays(row), deliveries(row, "main"), deliveries(row, "second")]);
+    }
+    const blob = new Blob(["﻿" + lines.map((l) => l.map(q).join(",")).join("\n")], { type: "text/csv" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+    a.download = `実働時間_${allStores ? "全店舗" : S.name}_${period.key}支給分.csv`; a.click();
+  };
+
+  // 実働入力ダイアログ用（その店舗の設定と、期間のデータを渡す）
+  const editorData = (storeId) => {
+    const st = data.stores.find((x) => x.id === storeId) || S;
+    return { ...data, store: st, windows: pd.windowsOf(st.id), daySet: pd.daySet[st.id] || {}, logs: pd.logs };
+  };
+  const editorRows = (storeId, k) => (pd?.requests || [])
+    .filter((r) => r.store_id === storeId && r.date === k && staffById[r.staff_id])
+    .map((r) => ({ s: staffById[r.staff_id], r }));
+  const openEdit = (d, storeId) => { if (!pd?.locked(storeId)) setDayEdit({ day: d, storeId }); };
+
+  const monthStart = (i) => i > 0 && days[i].m !== days[i - 1].m;
+  const laterMonth = (d) => d.m !== days[0].m;
+  const colBg = (d, hol) => (laterMonth(d) ? "#F6F8FA" : hol ? "#FBF8F8" : undefined);
+  const colBorder = (i) => (monthStart(i) ? { borderLeft: `2px solid ${NAVY}` } : {});
+  const sel = "border rounded px-1 py-0.5 w-12 tabular-nums bg-white";
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-3 mb-3 text-sm">
-        <span>日付をタップ → その日のランチ・ディナーの終業、通しの休憩、デリバリー担当を入力。早上がり・遅刻もその画面で一人ずつ直せます。</span>
-        <Btn small className="ml-auto" onClick={csv} disabled={!staff.length}>CSVを保存</Btn>
-      </div>
-      <Card className="overflow-x-auto">
-        <table className="border-collapse" style={{ minWidth: 300 + days.length * cellW }}>
-          <thead>
-            <tr>
-              <th className="sticky left-0 z-10 bg-white text-left px-3 py-2 text-sm font-medium" style={{ minWidth: 120, borderRight: `2px solid ${NAVY}`, borderBottom: `1px solid ${LINE}` }}>名前</th>
-              {days.map((d) => (
-                <th key={d.k} onClick={() => setDayEdit(d)} className="px-1 py-1 text-xs font-normal tabular-nums cursor-pointer" title="この日の実働を入力"
-                  style={{ width: cellW, minWidth: cellW, background: data.dayHours(d.k) ? "#E3F1E8" : data.isHoliday(d) ? "#F7F2F2" : "#fff", borderBottom: `1px solid ${LINE}`, color: dayColor(d, data.isHoliday(d)) }}>
-                  {d.d}<span className="opacity-70">({WD[d.w]})</span>
-                  {data.dayHours(d.k) && <span className="block" style={{ color: "#0F3A24" }}>入力済</span>}
-                </th>
-              ))}
-              <th className="px-2 py-1 text-xs font-medium whitespace-nowrap" style={{ borderBottom: `1px solid ${LINE}`, borderLeft: `2px solid ${NAVY}` }}>合計</th>
-              <th className="px-2 py-1 text-xs font-medium whitespace-nowrap" style={{ borderBottom: `1px solid ${LINE}` }} title={DELIVERY.main}>配メイン</th>
-              <th className="px-2 py-1 text-xs font-medium whitespace-nowrap" style={{ borderBottom: `1px solid ${LINE}` }} title={DELIVERY.second}>配2台目</th>
-            </tr>
-          </thead>
-          <tbody>
-            {staff.length === 0 && <tr><td colSpan={days.length + 4} className="px-3 py-6 text-sm opacity-60">出勤の人がいません。</td></tr>}
-            {staff.map((s) => (
-              <tr key={s.id}>
-                <td className="sticky left-0 z-10 bg-white px-3 py-1.5 text-sm whitespace-nowrap" style={{ borderRight: `2px solid ${NAVY}`, borderBottom: "1px solid #EEF1F3" }}>{s.name}</td>
-                {days.map((d) => {
-                  const r = approved(s.id, d.k);
-                  const w = r && data.workOf(r);
-                  const dv = data.daySet[d.k]?.delivery || {};
+      <Card className="px-4 py-3 mb-3 text-sm">
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          <button onClick={() => setPeriod(shiftPayPeriod(period, -1))} className="px-2 py-0.5 rounded" style={{ border: `1px solid ${LINE}` }} aria-label="前の期間">‹</button>
+          <span className="font-medium tabular-nums">{period.label}</span>
+          <button onClick={() => setPeriod(shiftPayPeriod(period, 1))} className="px-2 py-0.5 rounded" style={{ border: `1px solid ${LINE}` }} aria-label="次の期間">›</button>
+          {period.key !== base.key && <button onClick={() => setPeriod(base)} className="text-xs underline opacity-70">表示月に戻す</button>}
+          <span className="ml-auto flex flex-wrap items-center gap-2 text-xs">
+            <label className="flex items-center gap-1">締め日:
+              <input type="number" min={1} max={28} key={`c${C}`} defaultValue={C} className={sel} style={{ borderColor: LINE }}
+                onBlur={(e) => { e.target.value = savePay("pay_closing_day", e.target.value, 1, 28, C); }}
+                onKeyDown={(e) => e.key === "Enter" && e.target.blur()} />日{C >= 28 && "（月末）"}
+            </label>
+            <span className="opacity-40">／</span>
+            <label className="flex items-center gap-1">支給日:
+              <input type="number" min={1} max={31} key={`p${P}`} defaultValue={P} className={sel} style={{ borderColor: LINE }}
+                onBlur={(e) => { e.target.value = savePay("pay_day", e.target.value, 1, 31, P); }}
+                onKeyDown={(e) => e.key === "Enter" && e.target.blur()} />日
+            </label>
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <span className="tabular-nums">合計 <b>{fmtHours(totalHours)}</b>h</span>
+          <span className="tabular-nums">出勤 <b>{workDays}</b>日</span>
+          <span className="tabular-nums" title="実働を入力済みのシフト / 承認済みのシフト">入力済 <b>{entered}</b>/{reqs.length}</span>
+          {multiStore && (
+            <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={allStores} onChange={(e) => setAllStores(e.target.checked)} />全店舗で見る</label>
+          )}
+          <span className="ml-auto flex flex-wrap items-center gap-2">
+            <Btn small onClick={csv} disabled={!rows.length}>CSVを保存</Btn>
+            {lockedS ? (
+              <Btn small disabled={busy || !pd} onClick={toggleLock}>確定済み（解除）</Btn>
+            ) : (
+              <Btn small tone="primary" disabled={busy || !pd} onClick={toggleLock}>締め確定{multiStore ? `（${S.name}）` : ""}</Btn>
+            )}
+          </span>
+        </div>
+        {lockedS && (
+          <div className="text-xs mt-2 px-2 py-1 rounded" style={{ background: "#E3F1E8", color: "#0F3A24" }}>
+            {S.name} のこの期間は締め確定済みです{lockInfo?.locked_at && `（${new Date(lockInfo.locked_at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}）`}。修正するには「確定済み（解除）」を押してください。
+          </div>
+        )}
+      </Card>
+
+      {error ? <div className="text-sm" style={{ color: RED }}>読み込みエラー: {error}（SQL 0016 を実行したか確認してください）</div>
+        : !pd ? <div className="text-sm opacity-60">読み込み中…</div> : (
+        <Card>
+          <DualScroll>
+            <table className="border-collapse" style={{ minWidth: 340 + days.length * cellW }}>
+              <thead>
+                <tr>
+                  <th className="sticky left-0 z-10 bg-white text-left px-3 py-2 text-sm font-medium" style={{ minWidth: 130, borderRight: `2px solid ${NAVY}`, borderBottom: `1px solid ${LINE}` }}>名前</th>
+                  {days.map((d, i) => {
+                    const hol = !!holidayName(d.k);
+                    const done = pd.daySet[S.id]?.[d.k]?.work_hours;
+                    return (
+                      <th key={d.k} onClick={() => openEdit(d, S.id)} title={lockedS ? "締め確定済み" : `${S.name} のこの日の実働を入力`}
+                        className={`px-1 py-1 text-xs font-normal tabular-nums whitespace-nowrap ${lockedS ? "" : "cursor-pointer"}`}
+                        style={{ width: cellW, minWidth: cellW, background: done ? "#E3F1E8" : colBg(d, hol) || "#fff", borderBottom: `1px solid ${LINE}`, color: dayColor(d, hol), ...colBorder(i) }}>
+                        {d.m}/{d.d}<span className="opacity-70">({WD[d.w]})</span>
+                        {done && <span className="block" style={{ color: "#0F3A24" }}>入力済</span>}
+                      </th>
+                    );
+                  })}
+                  <th className="px-2 py-1 text-xs font-medium whitespace-nowrap" style={{ borderBottom: `1px solid ${LINE}`, borderLeft: `2px solid ${NAVY}` }}>合計</th>
+                  <th className="px-2 py-1 text-xs font-medium whitespace-nowrap" style={{ borderBottom: `1px solid ${LINE}` }}>日数</th>
+                  <th className="px-2 py-1 text-xs font-medium whitespace-nowrap" style={{ borderBottom: `1px solid ${LINE}` }} title={DELIVERY.main}>配メイン</th>
+                  <th className="px-2 py-1 text-xs font-medium whitespace-nowrap" style={{ borderBottom: `1px solid ${LINE}` }} title={DELIVERY.second}>配2台目</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length === 0 && <tr><td colSpan={days.length + 5} className="px-3 py-6 text-sm opacity-60">この期間に出勤のアルバイトがいません。</td></tr>}
+                {rows.map((row) => {
+                  const line = row.first && allStores ? `1px solid ${LINE}` : "1px solid #EEF1F3";
+                  const locked = !row.total && pd.locked(row.storeId);
                   return (
-                    <td key={d.k} className="text-center py-1 text-xs tabular-nums" style={{ borderBottom: "1px solid #EEF1F3", background: data.isHoliday(d) ? "#FBF8F8" : undefined }}>
-                      {r && (
-                        <button onClick={() => setDayEdit(d)} className="px-1.5 py-0.5 rounded" title={`${slotText(r)}${w?.individual ? "（個別に修正）" : ""}`}
-                          style={w?.individual ? { background: "#CFE8D8", color: "#0F3A24", outline: "1px solid #0F3A24" } : w ? { background: "#CFE8D8", color: "#0F3A24" } : { background: slotStyle(r).bg, color: slotStyle(r).fg }}>
-                          {w ? fmtHours(workHours(w)) : "−"}{w?.individual && "*"}
-                        </button>
-                      )}
-                      {(dv.main === s.id || dv.second === s.id) && <span className="block" style={{ color: "#7A4A00" }}>{dv.main === s.id ? "配1" : "配2"}</span>}
-                    </td>
+                    <tr key={row.key} style={row.total ? { background: "#F4F6F8" } : undefined}>
+                      <td className="sticky left-0 z-10 px-3 py-1.5 text-sm whitespace-nowrap" style={{ background: row.total ? "#F4F6F8" : "#fff", borderRight: `2px solid ${NAVY}`, borderTop: line }}>
+                        {row.total ? <span className="text-xs opacity-70 pl-2">合計</span> : <>
+                          {(row.first || !allStores) ? row.s.name : <span className="opacity-0">{row.s.name}</span>}
+                          {allStores && <span className="ml-1 text-xs opacity-50">{row.storeName}</span>}
+                          {locked && allStores && <span className="ml-1 text-xs opacity-50" title="締め確定済み">🔒</span>}
+                        </>}
+                      </td>
+                      {days.map((d, i) => {
+                        const hol = !!holidayName(d.k);
+                        const style = { borderTop: line, background: colBg(d, hol), ...colBorder(i) };
+                        if (row.total) {
+                          const rs = row.storeIds.map((sid) => idx[row.s.id]?.[sid]?.[d.k]).filter(Boolean);
+                          const any = rs.some((r) => pd.workOf(r));
+                          return <td key={d.k} className="text-center py-1 text-xs tabular-nums font-medium" style={style}>{rs.length ? (any ? fmtHours(rs.reduce((a, r) => a + hoursOf(r), 0)) : "−") : ""}</td>;
+                        }
+                        const r = reqOf(row, d.k);
+                        const w = r && pd.workOf(r);
+                        const dv = pd.daySet[row.storeId]?.[d.k]?.delivery || {};
+                        return (
+                          <td key={d.k} className="text-center py-1 text-xs tabular-nums" style={style}>
+                            {r && (
+                              <button onClick={() => openEdit(d, row.storeId)} disabled={locked} className="px-1.5 py-0.5 rounded disabled:cursor-default"
+                                title={`${slotText(r)}${w?.individual ? "（個別に修正）" : ""}${locked ? "（締め確定済み）" : ""}`}
+                                style={w?.individual ? { background: "#CFE8D8", color: "#0F3A24", outline: "1px solid #0F3A24" } : w ? { background: "#CFE8D8", color: "#0F3A24" } : { background: slotStyle(r).bg, color: slotStyle(r).fg }}>
+                                {w ? fmtHours(workHours(w)) : "−"}{w?.individual && "*"}
+                              </button>
+                            )}
+                            {(dv.main === row.s.id || dv.second === row.s.id) && <span className="block" style={{ color: "#7A4A00" }}>{dv.main === row.s.id ? "配1" : "配2"}</span>}
+                          </td>
+                        );
+                      })}
+                      <td className="text-right px-2 py-1 text-sm tabular-nums font-medium whitespace-nowrap" style={{ borderLeft: `2px solid ${NAVY}`, borderTop: line }}>{fmtHours(rowHours(row))}h</td>
+                      <td className="text-right px-2 py-1 text-sm tabular-nums" style={{ borderTop: line }}>{rowDays(row)}</td>
+                      <td className="text-right px-2 py-1 text-sm tabular-nums" style={{ borderTop: line }}>{deliveries(row, "main") || ""}</td>
+                      <td className="text-right px-2 py-1 text-sm tabular-nums" style={{ borderTop: line }}>{deliveries(row, "second") || ""}</td>
+                    </tr>
                   );
                 })}
-                <td className="text-right px-2 py-1 text-sm tabular-nums font-medium" style={{ borderLeft: `2px solid ${NAVY}`, borderBottom: "1px solid #EEF1F3" }}>{fmtHours(total(s))}h</td>
-                <td className="text-right px-2 py-1 text-sm tabular-nums" style={{ borderBottom: "1px solid #EEF1F3" }}>{deliveries(s, "main") || ""}</td>
-                <td className="text-right px-2 py-1 text-sm tabular-nums" style={{ borderBottom: "1px solid #EEF1F3" }}>{deliveries(s, "second") || ""}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
-      <div className="mt-1 text-xs opacity-70">日付の「入力済」＝その日の実働を入力済み ／ 「*」＝個別に直した人 ／ 配1＝メインデリバリー、配2＝二台目デリバリー</div>
-      {dayEdit && <DayWorkEditor key={dayEdit.k} data={data} day={dayEdit} rows={data.staffInStore.map((s) => ({ s, r: approved(s.id, dayEdit.k) })).filter((x) => x.r)} onClose={() => setDayEdit(null)} />}
+              </tbody>
+            </table>
+          </DualScroll>
+        </Card>
+      )}
+      <div className="mt-1 text-xs opacity-70">
+        日付をタップ → {S.name} のその日の終業・通しの休憩・デリバリー担当を入力（早上がり・遅刻も一人ずつ直せます）。
+        「入力済」＝その日の実働を入力済み ／ 「−」＝出勤だが実働が未入力 ／ 「*」＝個別に直した人 ／ 配1＝メインデリバリー、配2＝二台目デリバリー ／ 太線＝月の変わり目
+      </div>
+      {dayEdit && pd && (
+        <DayWorkEditor key={`${dayEdit.storeId}:${dayEdit.day.k}`} data={editorData(dayEdit.storeId)} day={dayEdit.day}
+          rows={editorRows(dayEdit.storeId, dayEdit.day.k)} onClose={() => setDayEdit(null)} />
+      )}
     </div>
   );
 }
