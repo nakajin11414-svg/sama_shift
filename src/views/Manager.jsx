@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/data.js";
-import { WD, PARTS, PART_KEYS, STATUS, CHANGE_STATUS, OFFICE, OFF_WISH, canOffice, isPartTime, TYPE, SKILLS, POSITIONS, skillShort, NAVY, LINE, RED, CLOSED_BG, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, DEFAULT_WINDOWS, slotText, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm } from "../lib/util.js";
+import { WD, PARTS, PART_KEYS, STATUS, CHANGE_STATUS, OFFICE, OFF_WISH, canOffice, isPartTime, TYPE, SKILLS, POSITIONS, skillShort, NAVY, LINE, RED, CLOSED_BG, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, DEFAULT_WINDOWS, slotText, slotShort, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm } from "../lib/util.js";
 import { Btn, Card, Tag, Gauge } from "../ui.jsx";
 
 export default function ManagerView(props) {
@@ -217,9 +217,184 @@ function SlotEditor({ r, windows, office, onSave, onDone }) {
   );
 }
 
+// 1人・1日分の出勤・休みの操作（日ごとの表示と月の表で共通）
+//   r = その日の希望（null なら運営・社員の出勤予定）
+function StaffDayRow({ data, s, day, r }) {
+  const [editing, setEditing] = useState(false);
+  const S = data.store;
+  const ot = (data.requestsAll[s.id]?.[day.k] || []).filter((x) => x.store_id !== S.id && x.status !== "rejected");
+  const li = "flex flex-wrap items-center gap-2 py-2 text-sm";
+  const pos = <span className="ml-1 text-xs opacity-60">{POSITIONS[s.position]}</span>;
+
+  if (!r) return (
+    // 運営・社員で休み希望のない日 = 出勤予定。枠は管理者が決める
+    <li className={li}>
+      <span className="w-24 truncate">{s.name}{pos}</span>
+      <Tag s={STATUS.pending}>出勤予定</Tag>
+      <span className="ml-auto flex gap-1">
+        <Btn small tone="primary" onClick={() => setEditing(!editing)}>出勤</Btn>
+        <Btn small tone="danger" onClick={() => api.upsertRequests(s.id, S.id, [day.k], "off", [], null, null, "pending")}>休み</Btn>
+      </span>
+      {editing && (
+        <SlotEditor r={null} windows={data.windows} office onDone={() => setEditing(false)}
+          onSave={(slot) => api.upsertRequests(s.id, S.id, [day.k], slot.type, slot.parts, slot.start_time, slot.end_time, "approved")} />
+      )}
+    </li>
+  );
+
+  if (r.type === "off") return (
+    // 運営・社員の休み希望（出勤にすることもできる）
+    <li className={li} style={{ opacity: 0.7 }}>
+      <span className="w-24 truncate">{s.name}{pos}</span>
+      <Tag s={OFF_WISH}>{OFF_WISH.label}</Tag>
+      <span className="ml-auto flex gap-1">
+        <Btn small onClick={() => setEditing(!editing)}>出勤にする</Btn>
+        <Btn small onClick={() => confirm(`${s.name} さんの休み希望を取り消して、出勤予定に戻しますか？`) && api.deleteRequests(s.id, S.id, [day.k])}>取消</Btn>
+      </span>
+      {editing && <SlotEditor r={r} windows={data.windows} office onDone={() => setEditing(false)} />}
+    </li>
+  );
+
+  return (
+    <li className={li} style={{ opacity: r.status === "rejected" ? 0.6 : 1 }}>
+      <span className="w-24 truncate">{s.name}
+        <span className="ml-1 text-xs opacity-60">{skillShort(s)}</span>
+        {s.position === "trainee" && <span className="ml-1 text-xs px-1 rounded" style={{ background: "#F6EBD6", color: "#7A4A00" }} title="研修中は出勤の人数に数えません">研修</span>}
+      </span>
+      <Tag s={slotStyle(r)}>{slotText(r)}</Tag>
+      <Tag s={STATUS[r.status]}>{STATUS[r.status].label}</Tag>
+      {r.desired && <span className="text-xs opacity-60">（希望: {slotText(r.desired)}）</span>}
+      {ot.length > 0 && <span className="text-xs" style={{ color: "#7A4A00" }} title={ot.map((x) => `${data.stores.find((st) => st.id === x.store_id)?.name}: ${slotText(x)}`).join("、")}>他店も</span>}
+      <span className="ml-auto flex gap-1">
+        <Btn small tone={r.status === "approved" ? undefined : "primary"} onClick={() => setEditing(!editing)}>{r.status === "approved" ? "枠を変更" : "出勤"}</Btn>
+        {r.status !== "rejected" && <Btn small tone="danger" onClick={() => api.setStatus(r.id, "rejected")}>休み</Btn>}
+        {r.status !== "pending" && <Btn small onClick={() => api.resetRequest(r)}>戻す</Btn>}
+      </span>
+      {editing && <SlotEditor r={r} windows={data.windows} office={canOffice(s)} onDone={() => setEditing(false)} />}
+    </li>
+  );
+}
+
+// 月の表（確定シフトと同じ形）。セルをタップすると下に出勤・休みの操作が出る
+function MonthGrid({ data, days, onOpenDay }) {
+  const [cell, setCell] = useState(null); // { sid, k }
+  useEffect(() => { setCell(null); }, [data.store?.id, days[0].k]);
+  const cellW = 60;
+  const staff = data.staffInStore;
+  const hl = "#E3E9F0";
+
+  const mark = (s, d) => {
+    const r = data.requests[s.id]?.[d.k];
+    if (r) {
+      if (r.type === "off") return <Tag s={OFF_WISH} title="休み希望">{OFF_WISH.short}</Tag>;
+      if (r.status === "approved") return <Tag s={slotStyle(r)} title={`出勤 ${slotText(r)}`}>{slotShort(r)}</Tag>;
+      if (r.status === "rejected") return <span className="text-xs" style={{ color: STATUS.rejected.fg }} title={`休み（希望: ${slotText(r)}）`}>✕</span>;
+      const st = slotStyle(r);
+      return <Tag s={{ bg: "#fff", fg: st.fg }} style={{ border: `1px dashed ${st.fg}` }} title={`未定（希望: ${slotText(r)}）`}>{slotShort(r)}</Tag>;
+    }
+    if (!data.isClosed(d) && canOffice(s)) return <span className="text-xs px-1 rounded" style={{ border: "1px dashed #B8C2CC", color: "#5A6B7A" }} title="出勤予定（枠は未定）">予</span>;
+    return null;
+  };
+
+  const cs = cell && staff.find((s) => s.id === cell.sid);
+  const cd = cell && days.find((d) => d.k === cell.k);
+  const cr = cs && cd ? data.requests[cs.id]?.[cd.k] || null : null;
+
+  return (
+    <div className={cell ? "pb-56" : ""}>
+      <Card className="overflow-x-auto">
+        <table className="border-collapse" style={{ minWidth: 140 + days.length * cellW }}>
+          <thead>
+            <tr>
+              <th className="sticky left-0 z-10 bg-white text-left px-3 py-2 text-sm font-medium" style={{ minWidth: 140, borderRight: `2px solid ${NAVY}`, borderBottom: `1px solid ${LINE}` }}>名前</th>
+              {days.map((d) => {
+                const hol = data.isHoliday(d), closed = data.isClosed(d), on = cell?.k === d.k;
+                return (
+                  <th key={d.k} onClick={() => onOpenDay(d.k)} title="この日を日ごとの表示で開く"
+                    className="cursor-pointer px-1 py-1 text-xs font-normal tabular-nums"
+                    style={{ width: cellW, minWidth: cellW, background: on ? hl : closed ? CLOSED_BG : hol ? "#F7F2F2" : "#fff", borderBottom: `1px solid ${LINE}`, color: dayColor(d, hol) }}>
+                    {d.d}<span className="opacity-70">({WD[d.w]})</span>
+                    {closed ? <span className="block opacity-60" style={{ color: NAVY }}>定休</span>
+                      : data.isRecruit(d.k) && <span className="block" style={{ color: RED }}>募集</span>}
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {staff.length === 0 && <tr><td colSpan={days.length + 1} className="px-3 py-6 text-sm opacity-60">この店舗のスタッフがいません。</td></tr>}
+            {staff.map((s) => (
+              <tr key={s.id}>
+                <td className="sticky left-0 z-10 px-3 py-1.5 text-sm whitespace-nowrap"
+                  style={{ background: cell?.sid === s.id ? hl : "#fff", borderRight: `2px solid ${NAVY}`, borderBottom: "1px solid #EEF1F3" }}>
+                  {s.name}
+                  <span className="ml-1 text-xs opacity-60">{POSITIONS[s.position]}</span>
+                </td>
+                {days.map((d) => {
+                  const on = cell?.sid === s.id && cell?.k === d.k;
+                  return (
+                    <td key={d.k} onClick={() => setCell(on ? null : { sid: s.id, k: d.k })}
+                      className="text-center py-1 cursor-pointer"
+                      style={{ borderBottom: "1px solid #EEF1F3", background: on ? hl : data.isClosed(d) ? CLOSED_BG : data.isHoliday(d) ? "#FBF8F8" : undefined, outline: on ? `2px solid ${NAVY}` : undefined, outlineOffset: -2 }}>
+                      {mark(s, d)}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+            {PART_KEYS.map((p, i) => (
+              <tr key={p}>
+                <td className="sticky left-0 z-10 bg-white px-3 py-1 text-xs whitespace-nowrap"
+                  style={{ borderRight: `2px solid ${NAVY}`, borderTop: i === 0 ? `2px solid ${NAVY}` : undefined }}>
+                  <Tag s={PARTS[p]}>{PARTS[p].label}</Tag><span className="ml-1 opacity-60">出勤/基準</span>
+                </td>
+                {days.map((d) => (
+                  <td key={d.k} className="text-center py-1" style={{ borderTop: i === 0 ? `2px solid ${NAVY}` : undefined, background: data.isClosed(d) ? CLOSED_BG : undefined }}>
+                    {!data.isClosed(d) && <PartGauge c={data.counts[d.k][p]} rule={data.ruleFor(d)} part={p} compact />}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="px-3 py-2 text-xs opacity-70 flex flex-wrap gap-x-4 gap-y-1">
+          <span>色付き＝出勤</span>
+          <span>点線＝未定（希望）</span>
+          <span>✕＝休み</span>
+          <span>休＝休み希望</span>
+          <span>予＝出勤予定（運営・社員、枠は未定）</span>
+          <span>セルをタップ → 出勤・休みを決める。日付をタップ → その日を日ごとの表示で開く</span>
+        </div>
+      </Card>
+
+      {cs && cd && (
+        <div className="fixed inset-x-0 bottom-0 z-30 px-2 pb-2">
+          <Card className="max-w-3xl mx-auto p-3 shadow-lg">
+            <div className="flex flex-wrap items-center gap-2 mb-1 text-sm">
+              <span className="font-medium tabular-nums" style={{ color: dayColor(cd, data.isHoliday(cd)) }}>{fmt(cd.k)}</span>
+              {data.isClosed(cd) && <span className="text-xs opacity-70">定休日</span>}
+              <span className="text-xs tabular-nums opacity-70">{PART_KEYS.map((p) => `${PARTS[p].short}${data.counts[cd.k][p].n}/${data.ruleFor(cd)[p]}`).join(" ")}</span>
+              <span className="ml-auto flex gap-2 text-xs">
+                <button onClick={() => onOpenDay(cd.k)} className="underline opacity-70">この日を開く</button>
+                <button onClick={() => setCell(null)} className="opacity-60">閉じる</button>
+              </span>
+            </div>
+            {cr || (canOffice(cs) && !data.isClosed(cd)) ? (
+              <ul><StaffDayRow key={`${cs.id}:${cd.k}`} data={data} s={cs} day={cd} r={cr} /></ul>
+            ) : (
+              <div className="text-sm py-2"><span className="mr-2">{cs.name}</span><span className="opacity-60">{data.isClosed(cd) ? "定休日です" : "この日の希望はありません"}</span></div>
+            )}
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ApproveView({ data, days, mk }) {
-  const [editing, setEditing] = useState(null); // 枠を変えて出勤にする希望のid
+  const [view, setView] = useState("day"); // "day"（日ごと）／ "month"（月の表）
   const [sel, setSel] = useState(days[0].k);
+  const openDay = (k) => { setSel(k); setView("day"); };
   useEffect(() => { if (!days.find((d) => d.k === sel)) setSel(days[0].k); }, [days, sel]);
   const S = data.store;
   const day = days.find((d) => d.k === sel) || days[0];
@@ -231,7 +406,6 @@ function ApproveView({ data, days, mk }) {
   const order = { pending: 0, approved: 1, rejected: 2 };
   rows.sort((a, b) => order[a.r.status] - order[b.r.status]);
   const pendingTotal = days.reduce((a, d) => a + PART_KEYS.reduce((b, p) => b + data.counts[d.k][p].pending, 0), 0);
-  const otherStore = (staffId) => (data.requestsAll[staffId]?.[day.k] || []).filter((r) => r.store_id !== S.id && r.status !== "rejected");
 
   return (
     <div>
@@ -246,6 +420,12 @@ function ApproveView({ data, days, mk }) {
           {data.deadline && <button onClick={() => api.setDeadline(S.id, mk, null)} className="underline opacity-60">解除</button>}
         </label>
         <span className="ml-auto" />
+        <div className="flex rounded overflow-hidden text-xs" style={{ border: `1px solid ${LINE}` }}>
+          {[["day", "日ごと"], ["month", "月の表"]].map(([v, l]) => (
+            <button key={v} onClick={() => setView(v)} className="px-3 py-1.5"
+              style={view === v ? { background: NAVY, color: "#fff" } : { background: "#fff" }}>{l}</button>
+          ))}
+        </div>
         <Btn tone={data.published ? "ghost" : "primary"} onClick={() => api.setPublished(S.id, mk, !data.published)}>
           {data.published ? "公開を取り下げる" : `${mk.replace("-", "年")}月分を公開する`}
         </Btn>
@@ -262,7 +442,7 @@ function ApproveView({ data, days, mk }) {
             <ul className="flex flex-wrap gap-x-4 gap-y-1">
               {items.map(({ d, s, r }) => (
                 <li key={r.id}>
-                  <button onClick={() => setSel(d.k)} className="hover:underline text-left">
+                  <button onClick={() => openDay(d.k)} className="hover:underline text-left">
                     <span className="tabular-nums">{fmt(d.k)}</span> {s.name}（{slotText(r)}）
                   </button>
                 </li>
@@ -276,6 +456,7 @@ function ApproveView({ data, days, mk }) {
       <EmployeeDaysOff data={data} days={days} mk={mk} />
       <TraineeCount data={data} mk={mk} />
 
+      {view === "month" ? <MonthGrid data={data} days={days} onOpenDay={openDay} /> : (
       <div className="flex flex-wrap gap-4 items-start">
         <Card className="flex-1 min-w-[min(20rem,100%)] overflow-x-auto">
           <div className="grid text-xs px-3 py-2 opacity-70" style={{ gridTemplateColumns: "5rem 1fr 1fr 1fr 3.5rem", minWidth: 380, borderBottom: `1px solid ${LINE}` }}>
@@ -349,57 +530,8 @@ function ApproveView({ data, days, mk }) {
 
           {rows.length === 0 && planned.length === 0 ? <div className="text-sm opacity-60 py-4">この日の希望はまだありません。</div> : (
             <ul className="divide-y" style={{ borderColor: "#EEF1F3" }}>
-              {rows.map(({ s, r }) => {
-                const ot = otherStore(s.id);
-                if (r.type === "off") return (
-                  // 運営・社員の休み希望（出勤にすることもできる）
-                  <li key={s.id} className="flex flex-wrap items-center gap-2 py-2 text-sm" style={{ opacity: 0.7 }}>
-                    <span className="w-24 truncate">{s.name}<span className="ml-1 text-xs opacity-60">{POSITIONS[s.position]}</span></span>
-                    <Tag s={OFF_WISH}>{OFF_WISH.label}</Tag>
-                    <span className="ml-auto flex gap-1">
-                      <Btn small onClick={() => setEditing(editing === r.id ? null : r.id)}>出勤にする</Btn>
-                      <Btn small onClick={() => confirm(`${s.name} さんの休み希望を取り消して、出勤予定に戻しますか？`) && api.deleteRequests(s.id, S.id, [day.k])}>取消</Btn>
-                    </span>
-                    {editing === r.id && <SlotEditor r={r} windows={data.windows} office onDone={() => setEditing(null)} />}
-                  </li>
-                );
-                return (
-                  <li key={s.id} className="flex flex-wrap items-center gap-2 py-2 text-sm" style={{ opacity: r.status === "rejected" ? 0.6 : 1 }}>
-                    <span className="w-24 truncate">{s.name}
-                      <span className="ml-1 text-xs opacity-60">{skillShort(s)}</span>
-                      {s.position === "trainee" && <span className="ml-1 text-xs px-1 rounded" style={{ background: "#F6EBD6", color: "#7A4A00" }} title="研修中は出勤の人数に数えません">研修</span>}
-                    </span>
-                    <Tag s={slotStyle(r)}>{slotText(r)}</Tag>
-                    <Tag s={STATUS[r.status]}>{STATUS[r.status].label}</Tag>
-                    {r.desired && <span className="text-xs opacity-60">（希望: {slotText(r.desired)}）</span>}
-                    {ot.length > 0 && <span className="text-xs" style={{ color: "#7A4A00" }} title={ot.map((x) => `${data.stores.find((st) => st.id === x.store_id)?.name}: ${slotText(x)}`).join("、")}>他店も</span>}
-                    <span className="ml-auto flex gap-1">
-                      <Btn small tone={r.status === "approved" ? undefined : "primary"} onClick={() => setEditing(editing === r.id ? null : r.id)}>{r.status === "approved" ? "枠を変更" : "出勤"}</Btn>
-                      {r.status !== "rejected" && <Btn small tone="danger" onClick={() => api.setStatus(r.id, "rejected")}>休み</Btn>}
-                      {r.status !== "pending" && <Btn small onClick={() => api.resetRequest(r)} title={r.desired ? "元の希望に戻して未定にする" : "未定に戻す"}>戻す</Btn>}
-                    </span>
-                    {editing === r.id && <SlotEditor r={r} windows={data.windows} office={canOffice(s)} onDone={() => setEditing(null)} />}
-                  </li>
-                );
-              })}
-              {planned.map((s) => {
-                // 運営・社員で休み希望のない日 = 出勤予定。枠は管理者が決める
-                const key = `plan:${s.id}`;
-                return (
-                  <li key={key} className="flex flex-wrap items-center gap-2 py-2 text-sm">
-                    <span className="w-24 truncate">{s.name}<span className="ml-1 text-xs opacity-60">{POSITIONS[s.position]}</span></span>
-                    <Tag s={STATUS.pending}>出勤予定</Tag>
-                    <span className="ml-auto flex gap-1">
-                      <Btn small tone="primary" onClick={() => setEditing(editing === key ? null : key)}>出勤</Btn>
-                      <Btn small tone="danger" onClick={() => api.upsertRequests(s.id, S.id, [day.k], "off", [], null, null, "pending")} title="この日を休みにする（休み希望として記録）">休み</Btn>
-                    </span>
-                    {editing === key && (
-                      <SlotEditor key={key + day.k} r={null} windows={data.windows} office onDone={() => setEditing(null)}
-                        onSave={(slot) => api.upsertRequests(s.id, S.id, [day.k], slot.type, slot.parts, slot.start_time, slot.end_time, "approved")} />
-                    )}
-                  </li>
-                );
-              })}
+              {rows.map(({ s, r }) => <StaffDayRow key={`${s.id}:${day.k}`} data={data} s={s} day={day} r={r} />)}
+              {planned.map((s) => <StaffDayRow key={`plan:${s.id}:${day.k}`} data={data} s={s} day={day} r={null} />)}
             </ul>
           )}
           {rows.some((x) => x.r.status === "pending" && x.r.type !== "off") && (
@@ -409,6 +541,7 @@ function ApproveView({ data, days, mk }) {
           )}
         </Card>
       </div>
+      )}
     </div>
   );
 }
