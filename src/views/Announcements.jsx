@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../lib/data.js";
+import { api, notifyResult } from "../lib/data.js";
 import { NAVY, LINE, RED } from "../lib/util.js";
 import { Btn, Card } from "../ui.jsx";
 
@@ -14,18 +14,28 @@ export default function AnnouncementsView({ data, profile, isManager }) {
     if (list.some((a) => a.created_at > readAt)) api.markAnnouncementsRead(profile.id).catch(() => {});
   }, []); // eslint-disable-line
 
+  const [sending, setSending] = useState(null); // 送信中のお知らせのid
   const storeName = (id) => (id ? data.stores.find((s) => s.id === id)?.name : "全店舗");
+  const notify = async (id) => {
+    setSending(id);
+    try {
+      const res = await api.lineNotify({ kind: "announcement", announcement_id: id });
+      alert(notifyResult(res));
+    } catch { /* lineNotify が alert 済み */ } finally { setSending(null); }
+  };
   const save = async () => {
     if (!form.title.trim()) return alert("タイトルを入れてください");
     const row = { title: form.title.trim(), body: form.body, store_id: form.store_id || null, pinned: form.pinned };
-    if (form.id) await api.updateAnnouncement(form.id, row);
-    else await api.postAnnouncement({ ...row, created_by: profile.id });
+    if (form.id) { await api.updateAnnouncement(form.id, row); setForm(null); return; }
+    const created = await api.postAnnouncement({ ...row, created_by: profile.id });
+    const send = form.notify;
     setForm(null);
+    if (send && created) await notify(created.id);
   };
 
   return (
     <div className="p-4 max-w-3xl mx-auto">
-      {isManager && !form && <div className="mb-3 flex"><Btn tone="primary" onClick={() => setForm({ title: "", body: "", store_id: data.store?.id || "", pinned: false })}>お知らせを投稿</Btn></div>}
+      {isManager && !form && <div className="mb-3 flex"><Btn tone="primary" onClick={() => setForm({ title: "", body: "", store_id: data.store?.id || "", pinned: false, notify: true })}>お知らせを投稿</Btn></div>}
       {form && (
         <Card className="p-4 mb-4 text-sm">
           <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="タイトル" className="w-full border rounded px-2 py-1.5 mb-2" />
@@ -38,6 +48,7 @@ export default function AnnouncementsView({ data, profile, isManager }) {
               </select>
             </label>
             <label className="flex items-center gap-1"><input type="checkbox" checked={form.pinned} onChange={(e) => setForm({ ...form, pinned: e.target.checked })} />上に固定</label>
+            {!form.id && <label className="flex items-center gap-1"><input type="checkbox" checked={form.notify} onChange={(e) => setForm({ ...form, notify: e.target.checked })} />LINEで通知する</label>}
             <span className="ml-auto flex gap-2"><Btn small onClick={() => setForm(null)}>キャンセル</Btn><Btn small tone="primary" onClick={save}>{form.id ? "更新" : "投稿"}</Btn></span>
           </div>
         </Card>
@@ -55,7 +66,12 @@ export default function AnnouncementsView({ data, profile, isManager }) {
                 </div>
                 <div className="whitespace-pre-wrap">{a.body}</div>
                 {isManager && (
-                  <div className="flex gap-2 justify-end mt-2">
+                  <div className="flex flex-wrap items-center gap-2 justify-end mt-2">
+                    {a.notified_at && <span className="text-xs opacity-60 mr-auto">LINE送信済み（{new Date(a.notified_at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}）</span>}
+                    <Btn small disabled={sending === a.id}
+                      onClick={() => confirm(a.notified_at ? "このお知らせをもう一度LINEで送りますか？" : "このお知らせをLINEで送りますか？") && notify(a.id)}>
+                      {sending === a.id ? "送信中…" : a.notified_at ? "LINEで再送" : "LINEで送る"}
+                    </Btn>
                     <Btn small onClick={() => setForm({ id: a.id, title: a.title, body: a.body, store_id: a.store_id || "", pinned: a.pinned })}>編集</Btn>
                     <Btn small onClick={() => confirm("このお知らせを削除しますか？") && api.deleteAnnouncement(a.id)}>削除</Btn>
                   </div>

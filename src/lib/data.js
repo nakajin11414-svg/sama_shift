@@ -18,7 +18,7 @@ export function useShiftData(ym, storeId) {
       supabase.from("requests").select("*").gte("date", first).lte("date", last), // 全店舗分（店舗横断の表示に使う）
       supabase.from("day_settings").select("*").gte("date", first).lte("date", last),
       supabase.from("publications").select("*").eq("month", mk),
-      supabase.from("profiles").select("id, display_name, picture_url, role, announcements_read_at"),
+      supabase.from("profiles").select("id, display_name, picture_url, role, announcements_read_at, line_friend, line_friend_checked_at"),
       supabase.from("announcements").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }).limit(100),
       supabase.from("work_logs").select("*"),
       supabase.from("month_settings").select("*").eq("month", mk),
@@ -31,7 +31,7 @@ export function useShiftData(ym, storeId) {
     // 研修中の人の出勤回数（月をまたいで、表示中の月の終わりまで。同じ日は1回）
     const trainees = staff.data.filter((s) => s.position === "trainee").map((s) => s.id);
     const [setting, tr] = await Promise.all([
-      supabase.from("settings").select("training_shifts").eq("id", 1).maybeSingle(),
+      supabase.from("settings").select("training_shifts, line_bot_id").eq("id", 1).maybeSingle(),
       trainees.length
         ? supabase.from("requests").select("staff_id, date").in("staff_id", trainees).eq("status", "approved").neq("type", "off").lte("date", last)
         : Promise.resolve({ data: [] }),
@@ -46,6 +46,7 @@ export function useShiftData(ym, storeId) {
       daySettings: daySettings.data, pubs: pubs.data, profiles: profiles.data, announcements: ann.data, logs: logs.data,
       monthSettings: monthSet.data, changes: changes.data, employeeDaysOff: quota.data?.employee_days_off ?? null,
       trainingShifts: setting.data?.training_shifts ?? 10,
+      lineBotId: setting.data?.line_bot_id || "",
       trainingDone: Object.fromEntries(Object.entries(trainingDone).map(([k, v]) => [k, v.size])),
     });
   }, [first, last, mk]);
@@ -139,6 +140,11 @@ const check = ({ error }) => {
   if (error) { alert(error.message); throw error; }
   window.dispatchEvent(new Event("shift-refresh"));
 };
+
+// line-notify の結果を知らせる文
+export const notifyResult = (res) =>
+  `LINEで ${res?.sent ?? 0} 人に送信しました。` +
+  (res?.not_friend?.length ? `\n\n公式アカウントを友だち追加していないため送れなかった人:\n${res.not_friend.join("、")}` : "");
 
 export const api = {
   // 希望
@@ -235,8 +241,22 @@ export const api = {
     if (error?.context?.json) { try { msg = (await error.context.json()).error || msg; } catch { /* 本文なし */ } }
     check({ error: msg ? { message: msg } : null });
   },
-  // お知らせ
-  async postAnnouncement(row) { check(await supabase.from("announcements").insert(row)); },
+  // LINE通知（公式アカウントのID と Edge Function line-notify）
+  async setLineBotId(v) { check(await supabase.from("settings").update({ line_bot_id: v || null }).eq("id", 1)); },
+  async lineNotify(body) {
+    const { data, error } = await supabase.functions.invoke("line-notify", { body });
+    let msg = error ? error.message : data?.error;
+    let detail = data?.detail;
+    if (error?.context?.json) { try { const j = await error.context.json(); msg = j.error || msg; detail = j.detail || detail; } catch { /* 本文なし */ } }
+    check({ error: msg ? { message: detail ? `${msg}\n${detail}` : msg } : null });
+    return data;
+  },
+  // お知らせ（作成した行を返す）
+  async postAnnouncement(row) {
+    const { data, error } = await supabase.from("announcements").insert(row).select().single();
+    check({ error });
+    return data;
+  },
   async updateAnnouncement(id, patch) { check(await supabase.from("announcements").update(patch).eq("id", id)); },
   async deleteAnnouncement(id) { check(await supabase.from("announcements").delete().eq("id", id)); },
   async markAnnouncementsRead(profileId) { check(await supabase.from("profiles").update({ announcements_read_at: new Date().toISOString() }).eq("id", profileId)); },

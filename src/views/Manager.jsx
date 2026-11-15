@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../lib/data.js";
+import { api, notifyResult } from "../lib/data.js";
 import { WD, PARTS, PART_KEYS, STATUS, CHANGE_STATUS, OFFICE, OFF_WISH, canOffice, isPartTime, TYPE, SKILLS, POSITIONS, skillShort, NAVY, LINE, RED, CLOSED_BG, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, DEFAULT_WINDOWS, slotText, slotShort, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm, hourLabel } from "../lib/util.js";
 import { Btn, Card, Tag, Gauge, DualScroll } from "../ui.jsx";
 
@@ -425,6 +425,18 @@ function ApproveView({ data, days, mk }) {
   const [view, setView] = useState("day"); // "day"（日ごと）／ "month"（月の表）
   const [sel, setSel] = useState(days[0].k);
   const openDay = (k) => { setSel(k); setView("day"); };
+  // 公開とLINEでの通知
+  const [notifying, setNotifying] = useState(false);
+  const notifyPublish = async () => {
+    setNotifying(true);
+    try { alert(notifyResult(await api.lineNotify({ kind: "publish", store_id: data.store.id, month: mk }))); }
+    catch { /* lineNotify が alert 済み */ } finally { setNotifying(false); }
+  };
+  const togglePublish = async () => {
+    const on = !data.published;
+    await api.setPublished(data.store.id, mk, on);
+    if (on && confirm("公開しました。スタッフにLINEで知らせますか？")) await notifyPublish();
+  };
   useEffect(() => { if (!days.find((d) => d.k === sel)) setSel(days[0].k); }, [days, sel]);
   const S = data.store;
   const day = days.find((d) => d.k === sel) || days[0];
@@ -456,7 +468,8 @@ function ApproveView({ data, days, mk }) {
               style={view === v ? { background: NAVY, color: "#fff" } : { background: "#fff" }}>{l}</button>
           ))}
         </div>
-        <Btn tone={data.published ? "ghost" : "primary"} onClick={() => api.setPublished(S.id, mk, !data.published)}>
+        {data.published && <Btn disabled={notifying} onClick={() => confirm(`${S.name} のスタッフに、${mk.replace("-", "年")}月分のシフト公開をLINEで知らせますか？`) && notifyPublish()}>{notifying ? "送信中…" : "LINEで公開を知らせる"}</Btn>}
+        <Btn tone={data.published ? "ghost" : "primary"} onClick={togglePublish}>
           {data.published ? "公開を取り下げる" : `${mk.replace("-", "年")}月分を公開する`}
         </Btn>
       </Card>
@@ -835,6 +848,65 @@ function DayWorkEditor({ data, day, rows, onClose }) {
   );
 }
 
+// ---------- LINE通知（公式アカウント） ----------
+function LineNotifyCard({ data }) {
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const id = data.lineBotId;
+  const link = id ? `https://line.me/R/ti/p/@${id}` : "";
+  // 在籍中で LINE 連携済みのスタッフの友だち状況
+  const linked = data.staff.map((s) => data.profiles.find((p) => p.id === s.profile_id)).filter(Boolean);
+  const checked = linked.filter((p) => p.line_friend_checked_at);
+  const friends = checked.filter((p) => p.line_friend).length;
+  const lastChecked = checked.reduce((a, p) => (p.line_friend_checked_at > a ? p.line_friend_checked_at : a), "");
+
+  const saveId = (v) => { const n = v.trim().replace(/^@/, ""); if (n !== id) api.setLineBotId(n); };
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 1500); }
+    catch { prompt("このリンクをコピーしてください", link); }
+  };
+  const check = async () => {
+    setBusy(true);
+    try {
+      const res = await api.lineNotify({ kind: "check" });
+      alert(`${res.checked} 人を確認しました。友だち追加済み ${res.friends} 人。` +
+        (res.not_friend?.length ? `\n\nまだ友だち追加していない人:\n${res.not_friend.join("、")}` : ""));
+    } catch { /* lineNotify が alert 済み */ } finally { setBusy(false); }
+  };
+
+  return (
+    <Card className="p-4 w-full text-sm">
+      <div className="flex flex-wrap items-center gap-2 mb-2">
+        <span className="font-medium">LINE通知</span>
+        <span className="text-xs opacity-60">お知らせとシフト公開を、公式アカウントからスタッフのLINEに送ります。届くのは公式アカウントを友だち追加した人だけです</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 mb-2">
+        <label className="flex items-center gap-1 text-xs">
+          公式アカウントID
+          <span className="opacity-60">@</span>
+          <input key={id} defaultValue={id} placeholder="例: 123abcde" onBlur={(e) => saveId(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+            className="border rounded px-2 py-0.5 w-32" style={{ borderColor: LINE }} />
+        </label>
+        {link && (
+          <>
+            <a href={link} target="_blank" rel="noreferrer" className="text-xs underline break-all" style={{ color: NAVY }}>{link}</a>
+            <Btn small onClick={copy}>{copied ? "コピーしました" : "リンクをコピー"}</Btn>
+          </>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Btn small disabled={busy} onClick={check}>{busy ? "確認中…" : "友だち状況を更新"}</Btn>
+        <span className="text-xs tabular-nums">
+          {checked.length ? <>友だち追加済み <b>{friends}</b> / {linked.length} 人（LINE連携済みの人のうち）</> : <span className="opacity-60">まだ確認していません</span>}
+          {lastChecked && <span className="opacity-60 ml-1">最終確認 {new Date(lastChecked).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
+        </span>
+      </div>
+      <div className="text-xs opacity-60 mt-2">リンクをLINEグループに送って、スタッフに友だち追加してもらってください。名簿の「通知○／✕」は最後に確認したときの状態です。</div>
+    </Card>
+  );
+}
+
 // ---------- スタッフ名簿 ----------
 function RosterView({ data, profile }) {
   const [v, setV] = useState("");
@@ -899,6 +971,7 @@ function RosterView({ data, profile }) {
 
   return (
     <div className="flex flex-wrap gap-4 items-start">
+      <LineNotifyCard data={data} />
       {pending.length > 0 && (
         <Card className="p-4 flex-1 min-w-[min(18rem,100%)]" style={{ borderColor: "#F3D27A", background: "#FFFBEF" }}>
           <div className="text-sm font-medium mb-1">LINEでログインした登録待ちの人</div>
@@ -958,7 +1031,15 @@ function RosterView({ data, profile }) {
                         onBlur={(e) => { const n = e.target.value.trim(); if (!n) e.target.value = s.name; else if (n !== s.name) api.updateStaff(s.id, { name: n }); }}
                         onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
                         className="border rounded px-2 py-0.5 w-32" style={{ borderColor: LINE }} />
-                      <div className="text-xs opacity-60">{p ? <>LINE: {p.display_name}{p.role === "manager" && "（管理者）"}</> : <span style={{ color: "#7A4A00" }}>LINE未連携</span>}</div>
+                      <div className="text-xs">
+                        {p ? <span className="opacity-60">LINE: {p.display_name}{p.role === "manager" && "（管理者）"}</span> : <span style={{ color: "#7A4A00" }}>LINE未連携</span>}
+                        {p?.line_friend_checked_at && (
+                          <span className="ml-1 px-1 rounded" title={`公式アカウントの友だち追加（${new Date(p.line_friend_checked_at).toLocaleString("ja-JP")} 確認）`}
+                            style={p.line_friend ? { background: "#CFE8D8", color: "#0F3A24" } : { background: "#F7E4E4", color: "#7A1E1E" }}>
+                            通知{p.line_friend ? "○" : "✕"}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="py-1.5 pr-2">
                       <select value={s.position || "part_time"} onChange={(e) => api.updateStaff(s.id, { position: e.target.value })}
