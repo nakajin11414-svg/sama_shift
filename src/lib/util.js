@@ -47,7 +47,9 @@ export const SKILLS = {
 };
 export const POSITIONS = { operation: "運営", employee: "社員", part_time: "アルバイト", trainee: "研修中" };
 export const skillShort =(s) => Object.entries(SKILLS).filter(([k]) => s[k]).map(([, sk]) => sk.short).join("");
-export const DEFAULT_WINDOWS = { prep: [9, 11], lunch: [11, 15], dinner: [17, 22] };
+export const DEFAULT_WINDOWS = { prep: [9, 10.5], lunch: [10.5, 15], dinner: [17, 22] }; // 時（10.5 = 10:30）
+// 時（小数）→ 表示用 "10:30" / "11時"
+export const hourLabel = (h) => (h % 1 ? `${Math.floor(h)}:${pad(Math.round((h % 1) * 60))}` : `${h}時`);
 // 基準人数の初期値（delivery / kitchen はランチ・ディナーそれぞれに必要なデリバリー・厨房の人数。prepper は仕込みの枠に必要な仕込みができる人の数）
 export const DEFAULT_RULE = { prep: 0, lunch: 0, dinner: 0, delivery: 1, kitchen: 1, prepper: 1 };
 export const SKILL_PARTS = ["lunch", "dinner"];

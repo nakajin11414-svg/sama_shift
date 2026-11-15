@@ -212,7 +212,7 @@ export const api = {
              : await supabase.from("publications").delete().eq("store_id", storeId).eq("month", month));
   },
   // 店舗
-  async addStore(name, sort_order) { check(await supabase.from("stores").insert({ name, sort_order })); },
+  async addStore(name, sort_order) { check(await supabase.from("stores").insert({ name, sort_order, windows: DEFAULT_WINDOWS })); },
   async updateStore(id, patch) { check(await supabase.from("stores").update(patch).eq("id", id)); },
   async deleteStore(id) { check(await supabase.from("stores").delete().eq("id", id)); },
   async setMembership(staffId, storeId, on) {

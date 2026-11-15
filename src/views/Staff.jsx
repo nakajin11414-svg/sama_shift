@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { api } from "../lib/data.js";
-import { WD, PARTS, PART_KEYS, CUSTOM, OFF_WISH, canOffice, CHANGE_STATUS, NAVY, LINE, RED, CLOSED_BG, slotShort, slotText, slotStyle, dayColor } from "../lib/util.js";
+import { WD, PARTS, PART_KEYS, CUSTOM, OFF_WISH, canOffice, CHANGE_STATUS, NAVY, LINE, RED, CLOSED_BG, slotShort, slotText, slotStyle, dayColor, hourLabel } from "../lib/util.js";
 import { Btn, Card, Tag } from "../ui.jsx";
 
-const HOURS = Array.from({ length: 15 }, (_, i) => i + 8); // 8〜22時
+const HOURS = Array.from({ length: 29 }, (_, i) => 8 + i / 2); // 8〜22時、30分刻み
 
 export default function StaffView({ data, days, profile }) {
   const isManager = profile.role === "manager";
@@ -68,11 +68,11 @@ export default function StaffView({ data, days, profile }) {
   });
   const chosenParts = () => PART_KEYS.filter((p) => parts.has(p) || (parts.has("through") && (p === "lunch" || p === "dinner")));
 
-  const hh = (h) => `${String(h).padStart(2, "0")}:00`;
+  const hh = (h) => `${String(Math.floor(h)).padStart(2, "0")}:${h % 1 ? String(Math.round((h % 1) * 60)).padStart(2, "0") : "00"}`;
   const endFor = (v) => (v === "lunch" || v === "dinner" ? data.windows[v][1] : Number(v));
   const endChoices = [
     ...["lunch", "dinner"].filter((p) => data.windows[p][1] > start).map((p) => ({ v: p, label: `${PARTS[p].label}終業` })),
-    ...HOURS.filter((h) => h > start).map((h) => ({ v: String(h), label: `${h}時` })),
+    ...HOURS.filter((h) => h > start).map((h) => ({ v: String(h), label: hourLabel(h) })),
   ];
   const changeStart = (h) => { setStart(h); if (endFor(end) <= h) setEnd(String(h + 1)); };
 
@@ -226,7 +226,7 @@ export default function StaffView({ data, days, profile }) {
         <div className="flex flex-wrap gap-2 items-center">
           <span className="flex items-center gap-1 text-sm">
             <select value={start} onChange={(e) => changeStart(Number(e.target.value))} className="border rounded px-1 py-1 bg-white">
-              {HOURS.filter((h) => h < 22).map((h) => <option key={h} value={h}>{h}時</option>)}
+              {HOURS.filter((h) => h < 22).map((h) => <option key={h} value={h}>{hourLabel(h)}</option>)}
             </select>〜
             <select value={end} onChange={(e) => setEnd(e.target.value)} className="border rounded px-1 py-1 bg-white">
               {endChoices.map((c) => <option key={c.v} value={c.v}>{c.label}</option>)}

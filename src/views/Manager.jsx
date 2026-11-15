@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/data.js";
-import { WD, PARTS, PART_KEYS, STATUS, CHANGE_STATUS, OFFICE, OFF_WISH, canOffice, isPartTime, TYPE, SKILLS, POSITIONS, skillShort, NAVY, LINE, RED, CLOSED_BG, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, DEFAULT_WINDOWS, slotText, slotShort, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm } from "../lib/util.js";
+import { WD, PARTS, PART_KEYS, STATUS, CHANGE_STATUS, OFFICE, OFF_WISH, canOffice, isPartTime, TYPE, SKILLS, POSITIONS, skillShort, NAVY, LINE, RED, CLOSED_BG, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, DEFAULT_WINDOWS, slotText, slotShort, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm, hourLabel } from "../lib/util.js";
 import { Btn, Card, Tag, Gauge, DualScroll } from "../ui.jsx";
 
 export default function ManagerView(props) {
@@ -634,6 +634,7 @@ function ChangesView({ data, days }) {
 }
 
 // ---------- 実働時間 ----------
+const HALF_HOURS = Array.from({ length: 49 }, (_, i) => i / 2); // 0〜24時、30分刻み
 const DELIVERY = { main: "メインデリバリー", second: "二台目デリバリー" };
 
 function WorkLogView({ data, days, mk }) {
@@ -1072,8 +1073,14 @@ function StoresView({ data, days }) {
             {PART_KEYS.map((p) => (
               <div key={p} className="flex items-center gap-2 py-1 text-sm">
                 <Tag s={PARTS[p]}>{PARTS[p].label}</Tag>
-                <input type="number" min={0} max={24} key={`${p}0${windows[p]?.[0]}`} defaultValue={windows[p]?.[0]} onBlur={(e) => setWindow(p, 0, e.target.value)} className="w-14 border rounded px-1 tabular-nums" />時〜
-                <input type="number" min={0} max={24} key={`${p}1${windows[p]?.[1]}`} defaultValue={windows[p]?.[1]} onBlur={(e) => setWindow(p, 1, e.target.value)} className="w-14 border rounded px-1 tabular-nums" />時
+                {[0, 1].map((i) => (
+                  <span key={i} className="flex items-center gap-1">
+                    {i === 1 && "〜"}
+                    <select value={windows[p]?.[i] ?? 0} onChange={(e) => setWindow(p, i, e.target.value)} className="border rounded px-1 py-0.5 bg-white tabular-nums">
+                      {HALF_HOURS.map((h) => <option key={h} value={h}>{hourLabel(h)}</option>)}
+                    </select>
+                  </span>
+                ))}
               </div>
             ))}
           </Card>
