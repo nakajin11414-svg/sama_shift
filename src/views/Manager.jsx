@@ -276,7 +276,7 @@ function StaffDayRow({ data, s, day, r }) {
 }
 
 // 月の表（確定シフトと同じ形）。セルをタップすると下に出勤・休みの操作が出る
-function MonthGrid({ data, days, onOpenDay }) {
+function MonthGrid({ data, days }) {
   const [cell, setCell] = useState(null); // { sid, k }
   useEffect(() => { setCell(null); }, [data.store?.id, days[0].k]);
   const cellW = 60;
@@ -296,12 +296,22 @@ function MonthGrid({ data, days, onOpenDay }) {
     return null;
   };
 
-  const cs = cell && staff.find((s) => s.id === cell.sid);
+  const cs = cell?.sid && staff.find((s) => s.id === cell.sid);
   const cd = cell && days.find((d) => d.k === cell.k);
   const cr = cs && cd ? data.requests[cs.id]?.[cd.k] || null : null;
 
+  // 日付をタップしたとき：その日の希望者（日ごとの表示の右側と同じ並び）
+  const order = { pending: 0, approved: 1, rejected: 2 };
+  const dayRows = cd && !cs ? [
+    ...staff.map((s) => ({ s, r: data.requests[s.id]?.[cd.k] })).filter((x) => x.r)
+      .sort((a, b) => (a.r.type === "off") - (b.r.type === "off") || order[a.r.status] - order[b.r.status]),
+    ...(data.isClosed(cd) ? [] : staff.filter((s) => canOffice(s) && !data.requests[s.id]?.[cd.k]).map((s) => ({ s, r: null }))),
+  ] : [];
+  const dayPending = dayRows.filter((x) => x.r && x.r.status === "pending" && x.r.type !== "off");
+  const colOn = (k) => cell && !cell.sid && cell.k === k; // 日付の列を選択中
+
   return (
-    <div className={cell ? "pb-56" : ""}>
+    <div className={cell ? (cs ? "pb-56" : "pb-[60vh]") : ""}>
       <Card className="overflow-x-auto">
         <table className="border-collapse" style={{ minWidth: 140 + days.length * cellW }}>
           <thead>
@@ -310,7 +320,7 @@ function MonthGrid({ data, days, onOpenDay }) {
               {days.map((d) => {
                 const hol = data.isHoliday(d), closed = data.isClosed(d), on = cell?.k === d.k;
                 return (
-                  <th key={d.k} onClick={() => onOpenDay(d.k)} title="この日を日ごとの表示で開く"
+                  <th key={d.k} onClick={() => setCell(colOn(d.k) ? null : { k: d.k })} title="この日の希望者を見る"
                     className="cursor-pointer px-1 py-1 text-xs font-normal tabular-nums"
                     style={{ width: cellW, minWidth: cellW, background: on ? hl : closed ? CLOSED_BG : hol ? "#F7F2F2" : "#fff", borderBottom: `1px solid ${LINE}`, color: dayColor(d, hol) }}>
                     {d.d}<span className="opacity-70">({WD[d.w]})</span>
@@ -335,7 +345,7 @@ function MonthGrid({ data, days, onOpenDay }) {
                   return (
                     <td key={d.k} onClick={() => setCell(on ? null : { sid: s.id, k: d.k })}
                       className="text-center py-1 cursor-pointer"
-                      style={{ borderBottom: "1px solid #EEF1F3", background: on ? hl : data.isClosed(d) ? CLOSED_BG : data.isHoliday(d) ? "#FBF8F8" : undefined, outline: on ? `2px solid ${NAVY}` : undefined, outlineOffset: -2 }}>
+                      style={{ borderBottom: "1px solid #EEF1F3", background: on || colOn(d.k) ? hl : data.isClosed(d) ? CLOSED_BG : data.isHoliday(d) ? "#FBF8F8" : undefined, outline: on ? `2px solid ${NAVY}` : undefined, outlineOffset: -2 }}>
                       {mark(s, d)}
                     </td>
                   );
@@ -363,26 +373,44 @@ function MonthGrid({ data, days, onOpenDay }) {
           <span>✕＝休み</span>
           <span>休＝休み希望</span>
           <span>予＝出勤予定（運営・社員、枠は未定）</span>
-          <span>セルをタップ → 出勤・休みを決める。日付をタップ → その日を日ごとの表示で開く</span>
+          <span>セルをタップ → その人の出勤・休みを決める。日付をタップ → その日の希望者を一覧で見る</span>
         </div>
       </Card>
 
-      {cs && cd && (
+      {cd && (
         <div className="fixed inset-x-0 bottom-0 z-30 px-2 pb-2">
-          <Card className="max-w-3xl mx-auto p-3 shadow-lg">
+          <Card className="max-w-3xl mx-auto p-3 shadow-lg flex flex-col" style={{ maxHeight: cs ? undefined : "55vh" }}>
             <div className="flex flex-wrap items-center gap-2 mb-1 text-sm">
               <span className="font-medium tabular-nums" style={{ color: dayColor(cd, data.isHoliday(cd)) }}>{fmt(cd.k)}</span>
+              {holidayName(cd.k) && <span className="text-xs" style={{ color: RED }}>{holidayName(cd.k)}</span>}
               {data.isClosed(cd) && <span className="text-xs opacity-70">定休日</span>}
-              <span className="text-xs tabular-nums opacity-70">{PART_KEYS.map((p) => `${PARTS[p].short}${data.counts[cd.k][p].n}/${data.ruleFor(cd)[p]}`).join(" ")}</span>
+              {!data.isClosed(cd) && PART_KEYS.map((p) => (
+                <span key={p} className="flex items-center gap-1 text-xs"><Tag s={PARTS[p]}>{PARTS[p].short}</Tag><PartGauge c={data.counts[cd.k][p]} rule={data.ruleFor(cd)} part={p} compact /></span>
+              ))}
               <span className="ml-auto flex gap-2 text-xs">
-                <button onClick={() => onOpenDay(cd.k)} className="underline opacity-70">この日を開く</button>
+                {cs && <button onClick={() => setCell({ k: cd.k })} className="underline opacity-70">この日の全員を見る</button>}
                 <button onClick={() => setCell(null)} className="opacity-60">閉じる</button>
               </span>
             </div>
-            {cr || (canOffice(cs) && !data.isClosed(cd)) ? (
-              <ul><StaffDayRow key={`${cs.id}:${cd.k}`} data={data} s={cs} day={cd} r={cr} /></ul>
+            {cs ? (
+              cr || (canOffice(cs) && !data.isClosed(cd)) ? (
+                <ul><StaffDayRow key={`${cs.id}:${cd.k}`} data={data} s={cs} day={cd} r={cr} /></ul>
+              ) : (
+                <div className="text-sm py-2"><span className="mr-2">{cs.name}</span><span className="opacity-60">{data.isClosed(cd) ? "定休日です" : "この日の希望はありません"}</span></div>
+              )
             ) : (
-              <div className="text-sm py-2"><span className="mr-2">{cs.name}</span><span className="opacity-60">{data.isClosed(cd) ? "定休日です" : "この日の希望はありません"}</span></div>
+              <>
+                {dayRows.length === 0 ? <div className="text-sm opacity-60 py-2">この日の希望はまだありません。</div> : (
+                  <ul className="divide-y overflow-y-auto" style={{ borderColor: "#EEF1F3" }}>
+                    {dayRows.map(({ s, r }) => <StaffDayRow key={`${r ? "" : "plan:"}${s.id}:${cd.k}`} data={data} s={s} day={cd} r={r || null} />)}
+                  </ul>
+                )}
+                {dayPending.length > 0 && (
+                  <div className="mt-2 flex justify-end">
+                    <Btn small onClick={() => dayPending.forEach((x) => api.setStatus(x.r.id, "approved"))}>未定をすべて出勤</Btn>
+                  </div>
+                )}
+              </>
             )}
           </Card>
         </div>
@@ -456,7 +484,7 @@ function ApproveView({ data, days, mk }) {
       <EmployeeDaysOff data={data} days={days} mk={mk} />
       <TraineeCount data={data} mk={mk} />
 
-      {view === "month" ? <MonthGrid data={data} days={days} onOpenDay={openDay} /> : (
+      {view === "month" ? <MonthGrid data={data} days={days} /> : (
       <div className="flex flex-wrap gap-4 items-start">
         <Card className="flex-1 min-w-[min(20rem,100%)] overflow-x-auto">
           <div className="grid text-xs px-3 py-2 opacity-70" style={{ gridTemplateColumns: "5rem 1fr 1fr 1fr 3.5rem", minWidth: 380, borderBottom: `1px solid ${LINE}` }}>
