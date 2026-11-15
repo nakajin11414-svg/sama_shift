@@ -451,7 +451,7 @@ function ApproveView({ data, days, mk }) {
         </label>
         <span className="ml-auto" />
         <div className="flex rounded overflow-hidden text-xs" style={{ border: `1px solid ${LINE}` }}>
-          {[["day", "日ごと"], ["month", "月の表"]].map(([v, l]) => (
+          {[["day", "日単位"], ["month", "月全体"]].map(([v, l]) => (
             <button key={v} onClick={() => setView(v)} className="px-3 py-1.5"
               style={view === v ? { background: NAVY, color: "#fff" } : { background: "#fff" }}>{l}</button>
           ))}
