@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { WD, PARTS, PART_KEYS, NAVY, LINE, CLOSED_BG, OFFICE, isPartTime, fmt, skillShort, slotText, slotShort, slotStyle, covers, dayColor, workHours, fmtHours } from "../lib/util.js";
-import { Card, Tag } from "../ui.jsx";
+import { Card, Tag, DualScroll } from "../ui.jsx";
 
 export default function PublishedView({ data, days, mk, profile, isManager }) {
   const [preview, setPreview] = useState(false);
@@ -43,7 +43,8 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
       </div>
 
       <div className="flex flex-wrap gap-4 items-start">
-        <Card className="overflow-x-auto flex-1 min-w-0">
+        <Card className="flex-1 min-w-0">
+          <DualScroll>
           <table className="border-collapse" style={{ minWidth: 140 + days.length * cellW }}>
             <thead>
               <tr>
@@ -83,6 +84,7 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
               })}
             </tbody>
           </table>
+          </DualScroll>
         </Card>
 
         {focus && (

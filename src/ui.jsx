@@ -1,4 +1,36 @@
+import { useEffect, useRef, useState } from "react";
 import { NAVY, LINE, RED } from "./lib/util.js";
+
+// 横スクロールのバーを上と下の両方に出す（横に長い表用）
+export const DualScroll = ({ children, className = "" }) => {
+  const top = useRef(null), body = useRef(null), lock = useRef(false);
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const el = body.current;
+    if (!el) return;
+    const update = () => setW(el.scrollWidth > el.clientWidth ? el.scrollWidth : 0);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  }, []);
+  // 片方を動かしたらもう片方を合わせる（互いに呼び合わないように lock する）
+  const sync = (from, to) => () => {
+    if (lock.current) { lock.current = false; return; }
+    if (to.current && to.current.scrollLeft !== from.current.scrollLeft) { lock.current = true; to.current.scrollLeft = from.current.scrollLeft; }
+  };
+  return (
+    <>
+      {w > 0 && (
+        <div ref={top} onScroll={sync(top, body)} className="overflow-x-auto overflow-y-hidden" style={{ borderBottom: `1px solid ${LINE}` }}>
+          <div style={{ width: w, height: 1 }} />
+        </div>
+      )}
+      <div ref={body} onScroll={sync(body, top)} className={`overflow-x-auto ${className}`}>{children}</div>
+    </>
+  );
+};
 
 export const Tag = ({ s, children, title, style }) => (
   <span title={title} className="inline-block rounded px-1.5 py-0.5 text-xs leading-tight"

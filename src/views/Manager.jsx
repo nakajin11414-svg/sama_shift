@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/data.js";
 import { WD, PARTS, PART_KEYS, STATUS, CHANGE_STATUS, OFFICE, OFF_WISH, canOffice, isPartTime, TYPE, SKILLS, POSITIONS, skillShort, NAVY, LINE, RED, CLOSED_BG, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, DEFAULT_WINDOWS, slotText, slotShort, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm } from "../lib/util.js";
-import { Btn, Card, Tag, Gauge } from "../ui.jsx";
+import { Btn, Card, Tag, Gauge, DualScroll } from "../ui.jsx";
 
 export default function ManagerView(props) {
   const [tab, setTab] = useState("approve");
@@ -312,7 +312,8 @@ function MonthGrid({ data, days }) {
 
   return (
     <div className={cell ? (cs ? "pb-56" : "pb-[60vh]") : ""}>
-      <Card className="overflow-x-auto">
+      <Card>
+        <DualScroll>
         <table className="border-collapse" style={{ minWidth: 140 + days.length * cellW }}>
           <thead>
             <tr>
@@ -367,6 +368,7 @@ function MonthGrid({ data, days }) {
             ))}
           </tbody>
         </table>
+        </DualScroll>
         <div className="px-3 py-2 text-xs opacity-70 flex flex-wrap gap-x-4 gap-y-1">
           <span>色付き＝出勤</span>
           <span>点線＝未定（希望）</span>
