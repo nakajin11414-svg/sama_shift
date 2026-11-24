@@ -37,7 +37,8 @@ export default function StaffView({ data, days, profile }) {
   }
 
   const mine = data.requests[me.id] || {};
-  const others = (k) => (data.requestsAll[me.id]?.[k] || []).filter((r) => r.store_id !== data.store.id && r.status !== "rejected");
+  const myStores = data.stores.filter((s) => data.membership[me.id]?.has(s.id));
+  const others = (k) =>(data.requestsAll[me.id]?.[k] || []).filter((r) => r.store_id !== data.store.id && r.status !== "rejected");
   const lead = days[0].w;
   const toggle = (k) => setSel((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
   // 定休日は選べない（ただし既に希望が入っている日は、取り消せるように選べる）
@@ -135,6 +136,11 @@ export default function StaffView({ data, days, profile }) {
           </div>
         )
       )}
+      {myStores.length > 1 && (
+        <div className="text-xs mb-2 px-3 py-2 rounded" style={{ background: "#E3E9F0" }}>
+          {myStores.map((s) => s.name).join("・")}に所属しています。どの店舗で出した希望も、ほかの店舗の管理者から見えます（人が足りない店舗で出勤になることがあります）。同じ日を店舗ごとに入れ直す必要はありません。
+        </div>
+      )}
       <div className="text-xs opacity-70 mb-2">日付をタップで複数選択 → 下で枠を選ぶと一括{verb}</div>
 
       {recruitDays.length > 0 && (
@@ -178,7 +184,14 @@ export default function StaffView({ data, days, profile }) {
                   {slotShort(r)}{r.status !== "pending" && <span className="ml-1">{r.status === "approved" ? "✓" : "✕"}</span>}
                 </span>
               )}
-              {ot.length > 0 && <span className="text-xs opacity-60 truncate" title={ot.map((x) => data.stores.find((s) => s.id === x.store_id)?.name).join("、")}>他店{ot.some((x) => x.status === "approved") ? "✓" : ""}</span>}
+              {/* 他店で出した希望（この店舗の管理者にも見えている） */}
+              {!r && ot.map((x) => (
+                <span key={x.id} className="mt-auto text-xs px-1 rounded self-start truncate max-w-full" title={`${data.storeName(x.store_id)}: ${slotText(x)}`}
+                  style={{ background: "#fff", color: slotStyle(x).fg, border: `1px dotted ${slotStyle(x).fg}` }}>
+                  {data.storeName(x.store_id).slice(0, 1)}{slotShort(x)}{x.status === "approved" && x.type !== "off" && <span className="ml-0.5">✓</span>}
+                </span>
+              ))}
+              {r && ot.length > 0 && <span className="text-xs opacity-60 truncate" title={ot.map((x) => `${data.storeName(x.store_id)}: ${slotText(x)}`).join("、")}>他店{ot.some((x) => x.status === "approved") ? "✓" : ""}</span>}
               {data.isRecruit(day.k) && !closed && !r && ot.length === 0 && (
                 <span className="mt-auto text-xs leading-tight" style={{ color: RED }}>募集{shortOf(day).length > 0 && <span className="block">{shortOf(day).map(([p, n]) => `${PARTS[p].short}${n}`).join(" ")}</span>}</span>
               )}
@@ -187,7 +200,7 @@ export default function StaffView({ data, days, profile }) {
           );
         })}
       </div>
-      <div className="mt-1 text-xs opacity-70">✓ 出勤 ／ ✕ 休み ／ 印なし 確認待ち ／ 他店 = 別店舗に希望あり ／ 灰色 = 定休日（選べません）{offMode && " ／ 休 = 休み希望（それ以外の日は出勤予定）"}{data.deadlinePassed && !isManager && " ／ 依頼中 = 変更依頼の確認待ち"}</div>
+      <div className="mt-1 text-xs opacity-70">✓ 出勤 ／ ✕ 休み ／ 印なし 確認待ち ／ 点線・店舗名の1文字付き = 他店で出した希望 ／ 灰色 = 定休日（選べません）{offMode && " ／ 休 = 休み希望（それ以外の日は出勤予定）"}{data.deadlinePassed && !isManager && " ／ 依頼中 = 変更依頼の確認待ち"}</div>
 
       <Card className="mt-4 p-4" style={mode === "request" ? { borderColor: "#E0B35A", background: "#FFFBEF" } : undefined}>
         {mode === "mixed" ? (

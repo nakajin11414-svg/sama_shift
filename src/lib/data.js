@@ -126,28 +126,66 @@ export function useShiftData(ym, storeId) {
     if (!raw) return null;
     const store = raw.stores.find((s) => s.id === storeId) || raw.stores[0];
     if (!store) return { ...raw, store: null };
-    const windows = { ...DEFAULT_WINDOWS, ...(store.windows || {}) };
     const membership = {}; // staff_id -> Set(store_id)
     for (const m of raw.staffStores) (membership[m.staff_id] ||= new Set()).add(m.store_id);
-    const staffInStore = raw.staff.filter((s) => membership[s.id]?.has(store.id));
 
     const requestsAll = {}; // staff_id -> date -> [rows across stores]
-    const requests = {};    // staff_id -> date -> row (this store)
-    for (const r of raw.requests) {
-      ((requestsAll[r.staff_id] ||= {})[r.date] ||= []).push(r);
-      if (r.store_id === store.id) (requests[r.staff_id] ||= {})[r.date] = r;
-    }
-    const daySet = Object.fromEntries(raw.daySettings.filter((d) => d.store_id === store.id).map((d) => [d.date, d]));
-    const holidays = new Set(store.holidays || []);
-    const defaultType = (day) => (day.w === 0 || day.w === 6 || holidays.has(day.k) || holidayName(day.k) ? "holiday" : "weekday");
-    const typeOf = (day) => daySet[day.k]?.day_type || defaultType(day);
+    for (const r of raw.requests) ((requestsAll[r.staff_id] ||= {})[r.date] ||= []).push(r);
+
+    // 店舗ごとの区分・基準人数・定休日・人数（表示中の店舗と、他店舗の状況の両方で使う）
+    const storeView = (st) => {
+      const windows = { ...DEFAULT_WINDOWS, ...(st.windows || {}) };
+      const staffInStore = raw.staff.filter((s) => membership[s.id]?.has(st.id));
+      const requests = {}; // staff_id -> date -> row (この店舗)
+      for (const r of raw.requests) if (r.store_id === st.id) (requests[r.staff_id] ||= {})[r.date] = r;
+      const daySet = Object.fromEntries(raw.daySettings.filter((d) => d.store_id === st.id).map((d) => [d.date, d]));
+      const holidays = new Set(st.holidays || []);
+      const defaultType = (day) => (day.w === 0 || day.w === 6 || holidays.has(day.k) || holidayName(day.k) ? "holiday" : "weekday");
+      const typeOf = (day) => daySet[day.k]?.day_type || defaultType(day);
+      const ruleFor = (day) => ({ ...DEFAULT_RULE, ...(st.rules?.[typeOf(day)] || st.rules?.weekday || {}) });
+      // 定休日: 日ごとの設定があればそれ、なければ店舗の毎週の定休日
+      const closedWeekdays = new Set(st.closed_weekdays || []);
+      const defaultClosed = (day) => closedWeekdays.has(day.w);
+      const isClosed = (day) => daySet[day.k]?.closed ?? defaultClosed(day);
+      // 枠ごとの人数と、出勤の中のデリバリーだけ・厨房だけ・両方できる人・仕込みができる人の数
+      const counts = {};
+      for (const day of days) {
+        const c = counts[day.k] = {};
+        for (const p of ["prep", "lunch", "dinner"]) c[p] = { n: 0, pending: 0, onlyDelivery: 0, onlyKitchen: 0, both: 0, prepper: 0 };
+        for (const s of staffInStore) {
+          if (s.position === "trainee") continue;
+          const r = requests[s.id]?.[day.k];
+          if (!r || r.status === "rejected") continue;
+          for (const p of ["prep", "lunch", "dinner"]) {
+            if (!covers(r, p, windows)) continue;
+            if (r.status === "approved") {
+              c[p].n++;
+              if (s.can_delivery && s.can_kitchen) c[p].both++;
+              else if (s.can_delivery) c[p].onlyDelivery++;
+              else if (s.can_kitchen) c[p].onlyKitchen++;
+              if (s.can_prep) c[p].prepper++;
+            } else c[p].pending++;
+          }
+        }
+      }
+      // その日の不足: [枠, あと何人][]（定休日は空）
+      const shortOf = (day) => (isClosed(day) ? [] : ["prep", "lunch", "dinner"].map((p) => [p, ruleFor(day)[p] - counts[day.k][p].n]).filter(([, n]) => n > 0));
+      return { store: st, windows, staffInStore, requests, daySet, defaultType, typeOf, ruleFor, defaultClosed, isClosed, counts, shortOf };
+    };
+    const cur = storeView(store);
+    const { windows, staffInStore, requests, daySet, typeOf, ruleFor, isClosed } = cur;
     const isHoliday = (day) => typeOf(day) !== "weekday";
-    const ruleFor = (day) => ({ ...DEFAULT_RULE, ...(store.rules?.[typeOf(day)] || store.rules?.weekday || {}) });
     const isRecruit = (k) => !!daySet[k]?.recruit;
-    // 定休日: 日ごとの設定があればそれ、なければ店舗の毎週の定休日
-    const closedWeekdays = new Set(store.closed_weekdays || []);
-    const defaultClosed = (day) => closedWeekdays.has(day.w);
-    const isClosed = (day) => daySet[day.k]?.closed ?? defaultClosed(day);
+    const otherStores = raw.stores.filter((s) => s.id !== store.id).map(storeView);
+    // 複数店舗に所属する人の、他店に出ている希望・出勤（この店舗に希望がない日に代わりに見せる）
+    //   出勤 → 未定 → 休み希望 → 休み の順で1件
+    const rank = (r) => (r.type === "off" ? 2 : { approved: 0, pending: 1, rejected: 3 }[r.status]);
+    const sharedOf = (staffId, k) => {
+      if (requests[staffId]?.[k]) return null;
+      const ot = (requestsAll[staffId]?.[k] || []).filter((r) => r.store_id !== store.id);
+      return ot.length ? [...ot].sort((a, b) => rank(a) - rank(b))[0] : null;
+    };
+    const storeName = (id) => raw.stores.find((s) => s.id === id)?.name || "";
     const published = raw.pubs.some((p) => p.store_id === store.id);
     // 締切: この日の終わりまで入力できる。過ぎたら募集中の日以外は変更依頼で受け付ける
     const deadline = raw.monthSettings.find((m) => m.store_id === store.id)?.deadline || null;
@@ -165,28 +203,8 @@ export function useShiftData(ym, storeId) {
       return w && logs[r.id] ? { ...w, individual: true } : w;
     };
 
-    // 枠ごとの人数と、出勤の中のデリバリーだけ・厨房だけ・両方できる人・仕込みができる人の数
-    const counts = {};
-    for (const day of days) {
-      const c = counts[day.k] = {};
-      for (const p of ["prep", "lunch", "dinner"]) c[p] = { n: 0, pending: 0, onlyDelivery: 0, onlyKitchen: 0, both: 0, prepper: 0 };
-      for (const s of staffInStore) {
-        if (s.position === "trainee") continue; // 研修中は人数に数えない
-        const r = requests[s.id]?.[day.k];
-        if (!r || r.status === "rejected") continue;
-        for (const p of ["prep", "lunch", "dinner"]) {
-          if (!covers(r, p, windows)) continue;
-          if (r.status === "approved") {
-            c[p].n++;
-            if (s.can_delivery && s.can_kitchen) c[p].both++;
-            else if (s.can_delivery) c[p].onlyDelivery++;
-            else if (s.can_kitchen) c[p].onlyKitchen++;
-            if (s.can_prep) c[p].prepper++;
-          } else c[p].pending++;
-        }
-      }
-    }
-    return { ...raw, store, windows, membership, staffInStore, requests, requestsAll, daySet, defaultType, typeOf, isHoliday, ruleFor, isRecruit, defaultClosed, isClosed, published, deadline, deadlinePassed, isLocked, counts, logs, dayHours, workOf };
+    const { defaultType, defaultClosed, counts, shortOf } = cur;
+    return { ...raw, store, windows, membership, staffInStore, requests, requestsAll, sharedOf, storeName, otherStores, daySet, defaultType, typeOf, isHoliday, ruleFor, isRecruit, defaultClosed, isClosed, published, deadline, deadlinePassed, isLocked, counts, shortOf, logs, dayHours, workOf };
   }, [raw, days, storeId]);
 
   return { data: view, days, mk, error, reload };
@@ -197,6 +215,15 @@ const check = ({ error }) => {
   if (error) { alert(error.message); throw error; }
   window.dispatchEvent(new Event("shift-refresh"));
 };
+
+// 枠を変えて出勤にするとき、元の希望を desired に残す（最初に変えたときだけ。同じ枠なら残さない）
+function desiredFor(r, slot) {
+  const orig = r.desired || { type: r.type, parts: r.parts, start_time: r.start_time, end_time: r.end_time };
+  const t = (x) => (x ? x.slice(0, 5) : null);
+  const same = orig.type === slot.type && [...(orig.parts || [])].sort().join() === [...(slot.parts || [])].sort().join()
+    && t(orig.start_time) === t(slot.start_time) && t(orig.end_time) === t(slot.end_time);
+  return same ? null : orig;
+}
 
 // line-notify の結果を知らせる文
 export const notifyResult = (res) =>
@@ -222,11 +249,16 @@ export const api = {
   async setStatus(id, status) { check(await supabase.from("requests").update({ status }).eq("id", id)); },
   // 管理者が枠・時間を変えて出勤にする。元の希望は desired に残す（最初に変えたときだけ）
   async approveAs(r, slot) {
-    const orig = r.desired || { type: r.type, parts: r.parts, start_time: r.start_time, end_time: r.end_time };
-    const t = (x) => (x ? x.slice(0, 5) : null);
-    const same = orig.type === slot.type && [...(orig.parts || [])].sort().join() === [...(slot.parts || [])].sort().join()
-      && t(orig.start_time) === t(slot.start_time) && t(orig.end_time) === t(slot.end_time);
-    check(await supabase.from("requests").update({ ...slot, status: "approved", desired: same ? null : orig }).eq("id", r.id));
+    check(await supabase.from("requests").update({ ...slot, status: "approved", desired: desiredFor(r, slot) }).eq("id", r.id));
+  },
+  // 複数店舗に所属する人の、他店に出ている希望（または出勤・休み）をこの店舗に移して出勤にする
+  //   他店の行はこの店舗の行になる（他店からは「○○店で出勤」として見える）
+  async moveRequest(r, storeId, slot) {
+    // 他店で個別に入れた実働は、移した後の出勤とは合わないので消す
+    check(await supabase.from("work_logs").delete().eq("request_id", r.id));
+    // 念のため、この店舗の同じ日の行（休みなど）を消してから移す
+    check(await supabase.from("requests").delete().eq("staff_id", r.staff_id).eq("store_id", storeId).eq("date", r.date));
+    check(await supabase.from("requests").update({ ...slot, store_id: storeId, status: "approved", desired: r.type === "off" ? null : desiredFor(r, slot) }).eq("id", r.id));
   },
   // 戻す: 枠を変えていたら元の希望に戻して未定にする
   async resetRequest(r) {
