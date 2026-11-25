@@ -485,7 +485,8 @@ function MonthGrid({ data, days }) {
 
       {cd && (
         <div className="fixed inset-x-0 bottom-0 z-30 px-2 pb-2">
-          <Card className="max-w-3xl mx-auto p-3 shadow-lg flex flex-col" style={{ maxHeight: cs ? undefined : "55vh" }}>
+          {/* 日付の一覧（複数店舗）は横に並べるので幅を広くする */}
+          <Card className={`${!cs && multi ? "max-w-6xl" : "max-w-3xl"} mx-auto p-3 shadow-lg flex flex-col`} style={{ maxHeight: cs ? undefined : "55vh" }}>
             <div className="flex flex-wrap items-center gap-2 mb-1 text-sm">
               {multi && sd && <span className="text-xs px-1.5 rounded" style={{ background: NAVY, color: "#fff" }}>{sd.store.name}</span>}
               <span className="font-medium tabular-nums" style={{ color: dayColor(cd, (sd || data).isHoliday(cd)) }}>{fmt(cd.k)}</span>
@@ -505,7 +506,8 @@ function MonthGrid({ data, days }) {
               )
             ) : (
               // その日の希望者を店舗ごとに（全店舗）
-              <div className="overflow-y-auto">
+              // 広い画面では店舗を左右に並べる（表示中の店舗が左）。スマホでは縦に並ぶ
+              <div className="overflow-y-auto grid gap-x-4 items-start" style={{ gridTemplateColumns: multi ? `repeat(auto-fit, minmax(min(22rem, 100%), 1fr))` : undefined }}>
                 {sections.map((D) => {
                   const rows = rowsOf(D, cd);
                   const pend = pendingOf(rows);
