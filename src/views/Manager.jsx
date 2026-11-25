@@ -358,12 +358,23 @@ function MonthGrid({ data, days }) {
     return null;
   };
 
-  // 選択中のセルの店舗・人・日（上の日付を押したときは st なし＝全店舗）
+  // 選択中のセルの店舗・人・日（日付を押したときは st なし＝全店舗の一覧）
   const sd = cell?.st ? sections.find((x) => x.store.id === cell.st) : null;
   const cs = sd && cell.sid && sd.staffInStore.find((s) => s.id === cell.sid);
   const cd = cell && days.find((d) => d.k === cell.k);
   const cr = cs && cd ? sd.requests[cs.id]?.[cd.k] || null : null;
-  const listStores = cd && !cs ? (sd ? [sd] : sections) : []; // 一覧で出す店舗
+  // 募集の切り替え（店舗・日ごと）
+  const recruitBtn = (D, d, small) => {
+    const rec = D.isRecruit(d.k), short = D.shortOf(d).length > 0;
+    return (
+      <button onClick={(e) => { e.stopPropagation(); api.setRecruit(D.store.id, d.k, !rec); }}
+        title={rec ? `${D.store.name}: 募集中（押すと取り下げ）` : `${D.store.name}: 押すと募集する${short ? "（人が足りません）" : ""}`}
+        className={`text-xs rounded ${small ? "px-1" : "px-1.5 py-0.5"}`}
+        style={rec ? { background: RED, color: "#fff" } : { border: `1px dashed ${short ? RED : "#B8C2CC"}`, color: short ? RED : "#B8C2CC" }}>
+        {rec ? "募集中" : "募集"}
+      </button>
+    );
+  };
 
   // 日付をタップしたとき：その店舗のその日の希望者（日ごとの表示の右側と同じ並び）
   const order = { pending: 0, approved: 1, rejected: 2 };
@@ -375,7 +386,7 @@ function MonthGrid({ data, days }) {
     ...(D.isClosed(d) ? [] : D.staffInStore.filter((s) => canOffice(s) && !D.requests[s.id]?.[d.k] && !D.sharedOf(s.id, d.k)).map((s) => ({ s, r: null }))),
   ];
   const pendingOf = (rows) => rows.filter((x) => x.r && x.r.status === "pending" && x.r.type !== "off");
-  const colOn = (st, k) => cell && !cell.sid && (!cell.st || cell.st === st) && cell.k === k; // その店舗の日付の列を選択中
+  const colOn = (k) => cell && !cell.sid && cell.k === k; // 日付の列を選択中
   const gauges = (D, d) => PART_KEYS.map((p) => (
     <span key={p} className="flex items-center gap-1 text-xs"><Tag s={PARTS[p]}>{PARTS[p].short}</Tag><PartGauge c={D.counts[d.k][p]} rule={D.ruleFor(d)} part={p} compact /></span>
   ));
@@ -391,9 +402,8 @@ function MonthGrid({ data, days }) {
               <th className={`${sticky} bg-white text-left py-2 text-sm font-medium`} style={{ minWidth: 140, borderRight: `2px solid ${NAVY}`, borderBottom: `1px solid ${LINE}` }}>名前</th>
               {days.map((d) => {
                 const hol = data.isHoliday(d), on = cell?.k === d.k;
-                const allOn = cell && !cell.st && cell.k === d.k;
                 return (
-                  <th key={d.k} onClick={() => setCell(allOn ? null : { k: d.k })} title={multi ? "この日の全店舗の希望者を見る" : "この日の希望者を見る"}
+                  <th key={d.k} onClick={() => setCell(colOn(d.k) ? null : { k: d.k })} title={multi ? "この日の全店舗の希望者を見る" : "この日の希望者を見る"}
                     className="cursor-pointer px-1 py-1 text-xs font-normal tabular-nums"
                     style={{ width: cellW, minWidth: cellW, background: on ? hl : hol ? "#F7F2F2" : "#fff", borderBottom: `1px solid ${LINE}`, color: dayColor(d, hol) }}>
                     {d.d}<span className="opacity-70">({WD[d.w]})</span>
@@ -407,7 +417,7 @@ function MonthGrid({ data, days }) {
             const staff = D.staffInStore;
             return (
               <tbody key={sid}>
-                {/* 店舗の見出し行: 日付をタップするとこの店舗のその日の希望者を一覧で見る */}
+                {/* 店舗の見出し行: 日ごとの募集の切り替え（定休日は出さない） */}
                 <tr>
                   <td className={`${sticky} py-1.5 text-sm font-medium`}
                     style={{ background: "#F4F6F8", borderRight: `2px solid ${NAVY}`, borderTop: si > 0 ? `3px solid ${NAVY}` : undefined, borderBottom: `1px solid ${LINE}` }}>
@@ -415,14 +425,11 @@ function MonthGrid({ data, days }) {
                     {D.published && <span className="ml-1 text-xs px-1 rounded" style={{ background: "#8FBFA6", color: "#0F3A24" }}>公開中</span>}
                   </td>
                   {days.map((d) => {
-                    const closed = D.isClosed(d), on = colOn(sid, d.k);
+                    const closed = D.isClosed(d);
                     return (
-                      <td key={d.k} onClick={() => setCell(on ? null : { st: sid, k: d.k })} title={`${D.store.name} のこの日の希望者を見る`}
-                        className="cursor-pointer text-center py-1 text-xs"
-                        style={{ background: on ? hl : closed ? CLOSED_BG : "#F4F6F8", borderTop: si > 0 ? `3px solid ${NAVY}` : undefined, borderBottom: `1px solid ${LINE}` }}>
-                        {closed ? <span className="opacity-60">定休</span>
-                          : D.isRecruit(d.k) ? <span style={{ color: RED }}>募集</span>
-                          : <span className="opacity-30">一覧</span>}
+                      <td key={d.k} className="text-center py-1 text-xs"
+                        style={{ background: colOn(d.k) ? hl : closed ? CLOSED_BG : "#F4F6F8", borderTop: si > 0 ? `3px solid ${NAVY}` : undefined, borderBottom: `1px solid ${LINE}` }}>
+                        {closed ? <span className="opacity-60">定休</span> : recruitBtn(D, d, true)}
                       </td>
                     );
                   })}
@@ -440,7 +447,7 @@ function MonthGrid({ data, days }) {
                       return (
                         <td key={d.k} onClick={() => setCell(on ? null : { st: sid, sid: s.id, k: d.k })}
                           className="text-center py-1 cursor-pointer"
-                          style={{ borderBottom: "1px solid #EEF1F3", background: on || colOn(sid, d.k) ? hl : D.isClosed(d) ? CLOSED_BG : D.isHoliday(d) ? "#FBF8F8" : undefined, outline: on ? `2px solid ${NAVY}` : undefined, outlineOffset: -2 }}>
+                          style={{ borderBottom: "1px solid #EEF1F3", background: on || colOn(d.k) ? hl : D.isClosed(d) ? CLOSED_BG : D.isHoliday(d) ? "#FBF8F8" : undefined, outline: on ? `2px solid ${NAVY}` : undefined, outlineOffset: -2 }}>
                           {mark(D, s, d)}
                         </td>
                       );
@@ -472,7 +479,7 @@ function MonthGrid({ data, days }) {
           <span>休＝休み希望</span>
           <span>予＝出勤予定（運営・社員、枠は未定）</span>
           {multi && <span>店舗名の1文字付き（薄い色）＝他店に出ている希望・出勤（タップでその段の店舗に移せます）</span>}
-          <span>セルをタップ → その人の出勤・休みを決める。いちばん上の日付をタップ → {multi ? "全店舗の" : ""}その日の希望者を一覧で見る{multi && "（店舗名の行の日付ならその店舗だけ）"}</span>
+          <span>セルをタップ → その人の出勤・休みを決める。日付をタップ → {multi ? "全店舗の" : ""}その日の希望者を一覧で見る。店舗名の行の「募集」→ その店舗のその日を募集中にする（赤い点線＝人が足りない日）</span>
         </div>
       </Card>
 
@@ -485,8 +492,7 @@ function MonthGrid({ data, days }) {
               {holidayName(cd.k) && <span className="text-xs" style={{ color: RED }}>{holidayName(cd.k)}</span>}
               {sd && (sd.isClosed(cd) ? <span className="text-xs opacity-70">定休日</span> : gauges(sd, cd))}
               <span className="ml-auto flex gap-2 text-xs">
-                {cs && <button onClick={() => setCell({ st: sd.store.id, k: cd.k })} className="underline opacity-70">この店舗の全員</button>}
-                {sd && multi && <button onClick={() => setCell({ k: cd.k })} className="underline opacity-70">全店舗を見る</button>}
+                {cs && <button onClick={() => setCell({ k: cd.k })} className="underline opacity-70">この日の全員を見る</button>}
                 <button onClick={() => setCell(null)} className="opacity-60">閉じる</button>
               </span>
             </div>
@@ -498,20 +504,19 @@ function MonthGrid({ data, days }) {
                 <div className="text-sm py-2"><span className="mr-2">{cs.name}</span><span className="opacity-60">{sd.isClosed(cd) ? "定休日です" : "この日の希望はありません"}</span></div>
               )
             ) : (
-              // その日の希望者を店舗ごとに（1店舗を選んだときはその店舗だけ）
+              // その日の希望者を店舗ごとに（全店舗）
               <div className="overflow-y-auto">
-                {listStores.map((D) => {
+                {sections.map((D) => {
                   const rows = rowsOf(D, cd);
                   const pend = pendingOf(rows);
                   return (
                     <div key={D.store.id} className="mb-2">
-                      {!sd && (
-                        <div className="flex flex-wrap items-center gap-2 px-2 py-1 mt-1 rounded text-sm" style={{ background: "#F4F6F8" }}>
-                          <span className="font-medium">{D.store.name}</span>
-                          {D.isClosed(cd) ? <span className="text-xs opacity-70">定休日</span> : gauges(D, cd)}
-                          {D.shortOf(cd).length > 0 && <span className="text-xs" style={{ color: RED }}>{D.shortOf(cd).map(([p, n]) => `${PARTS[p].label}あと${n}人`).join("、")}</span>}
-                        </div>
-                      )}
+                      <div className="flex flex-wrap items-center gap-2 px-2 py-1 mt-1 rounded text-sm" style={{ background: "#F4F6F8" }}>
+                        <span className="font-medium">{D.store.name}</span>
+                        {D.isClosed(cd) ? <span className="text-xs opacity-70">定休日</span> : gauges(D, cd)}
+                        {D.shortOf(cd).length > 0 && <span className="text-xs" style={{ color: RED }}>{D.shortOf(cd).map(([p, n]) => `${PARTS[p].label}あと${n}人`).join("、")}</span>}
+                        {!D.isClosed(cd) && <span className="ml-auto">{recruitBtn(D, cd)}</span>}
+                      </div>
                       {rows.length === 0 ? <div className="text-sm opacity-60 py-2 px-2">この日の希望はまだありません。</div> : (
                         <ul className="divide-y" style={{ borderColor: "#EEF1F3" }}>
                           {rows.map(({ s, r }) => <StaffDayRow key={`${D.store.id}:${r ? "" : "plan:"}${s.id}:${cd.k}`} data={D} s={s} day={cd} r={r || null} />)}
@@ -519,7 +524,7 @@ function MonthGrid({ data, days }) {
                       )}
                       {pend.length > 0 && (
                         <div className="mt-1 flex justify-end">
-                          <Btn small onClick={() => pend.forEach((x) => api.setStatus(x.r.id, "approved"))}>{!sd && multi ? `${D.store.name}の未定をすべて出勤` : "未定をすべて出勤"}</Btn>
+                          <Btn small onClick={() => pend.forEach((x) => api.setStatus(x.r.id, "approved"))}>{multi ? `${D.store.name}の未定をすべて出勤` : "未定をすべて出勤"}</Btn>
                         </div>
                       )}
                     </div>
@@ -535,7 +540,7 @@ function MonthGrid({ data, days }) {
 }
 
 function ApproveView({ data, days, mk }) {
-  const [view, setView] = useState("day"); // "day"（日ごと）／ "month"（月の表）
+  const [view, setView] = useState("month"); // "month"（月の表。初期表示）／ "day"（日ごと）
   const [sel, setSel] = useState(days[0].k);
   const openDay = (k) => { setSel(k); setView("day"); };
   // 公開とLINEでの通知
@@ -578,7 +583,7 @@ function ApproveView({ data, days, mk }) {
         </label>
         <span className="ml-auto" />
         <div className="flex rounded overflow-hidden text-xs" style={{ border: `1px solid ${LINE}` }}>
-          {[["day", "日単位"], ["month", "月全体"]].map(([v, l]) => (
+          {[["month", "月全体"], ["day", "日単位"]].map(([v, l]) => (
             <button key={v} onClick={() => setView(v)} className="px-3 py-1.5"
               style={view === v ? { background: NAVY, color: "#fff" } : { background: "#fff" }}>{l}</button>
           ))}
