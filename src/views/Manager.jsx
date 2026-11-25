@@ -324,16 +324,18 @@ function StaffDayRow({ data, s, day, r }) {
   );
 }
 
-// 月の表（確定シフトと同じ形）。セルをタップすると下に出勤・休みの操作が出る
+// 月の表（確定シフトと同じ形）。全店舗を1つの表にまとめ、表示中の店舗を先頭に、他店舗を下に並べる
+// セルをタップすると下に出勤・休みの操作が出る（操作はそのセルの店舗に対して行う）
 function MonthGrid({ data, days }) {
-  const [cell, setCell] = useState(null); // { sid, k }
+  const [cell, setCell] = useState(null); // { st: 店舗id, sid?: スタッフid, k: 日付 }
   useEffect(() => { setCell(null); }, [data.store?.id, days[0].k]);
   const cellW = 60;
-  const staff = data.staffInStore;
   const hl = "#E3E9F0";
+  const sections = data.allStores; // [表示中の店舗, ...他店舗]（どれも data と同じ形）
+  const multi = sections.length > 1;
 
-  const mark = (s, d) => {
-    const r = data.requests[s.id]?.[d.k];
+  const mark = (D, s, d) => {
+    const r = D.requests[s.id]?.[d.k];
     if (r) {
       if (r.type === "off") return <Tag s={OFF_WISH} title="休み希望">{OFF_WISH.short}</Tag>;
       if (r.status === "approved") return <Tag s={slotStyle(r)} title={`出勤 ${slotText(r)}`}>{slotShort(r)}</Tag>;
@@ -342,35 +344,38 @@ function MonthGrid({ data, days }) {
       return <Tag s={{ bg: "#fff", fg: st.fg }} style={{ border: `1px dashed ${st.fg}` }} title={`未定（希望: ${slotText(r)}）`}>{slotShort(r)}</Tag>;
     }
     // 他店に出ている希望・出勤（店舗名の1文字目を付けて薄く出す）
-    const sh = data.sharedOf(s.id, d.k);
+    const sh = D.sharedOf(s.id, d.k);
     if (sh) {
-      const from = data.storeName(sh.store_id);
+      const from = D.storeName(sh.store_id);
       const ini = <span className="opacity-70">{from.slice(0, 1)}</span>;
       if (sh.type === "off") return <span className="text-xs px-1 rounded" style={{ background: OFF_WISH.bg, color: OFF_WISH.fg, opacity: 0.6 }} title={`休み希望（${from}）`}>{ini}{OFF_WISH.short}</span>;
       if (sh.status === "approved") return <span className="text-xs px-1 rounded" style={{ background: "#E4E7EA", color: "#5A6B7A" }} title={`${from}で出勤 ${slotText(sh)}`}>{ini}{slotShort(sh)}</span>;
       if (sh.status === "rejected") return <span className="text-xs" style={{ color: STATUS.rejected.fg, opacity: 0.6 }} title={`${from}で休み（希望: ${slotText(sh)}）`}>{ini}✕</span>;
       const st = slotStyle(sh);
-      return <span className="text-xs px-1 rounded" style={{ border: `1px dotted ${st.fg}`, color: st.fg }} title={`${from}に希望・未定（${slotText(sh)}）。タップしてこの店舗で出勤にできます`}>{ini}{slotShort(sh)}</span>;
+      return <span className="text-xs px-1 rounded" style={{ border: `1px dotted ${st.fg}`, color: st.fg }} title={`${from}に希望・未定（${slotText(sh)}）。タップして${D.store.name}で出勤にできます`}>{ini}{slotShort(sh)}</span>;
     }
-    if (!data.isClosed(d) && canOffice(s)) return <span className="text-xs px-1 rounded" style={{ border: "1px dashed #B8C2CC", color: "#5A6B7A" }} title="出勤予定（枠は未定）">予</span>;
+    if (!D.isClosed(d) && canOffice(s)) return <span className="text-xs px-1 rounded" style={{ border: "1px dashed #B8C2CC", color: "#5A6B7A" }} title="出勤予定（枠は未定）">予</span>;
     return null;
   };
 
-  const cs = cell?.sid && staff.find((s) => s.id === cell.sid);
-  const cd = cell && days.find((d) => d.k === cell.k);
-  const cr = cs && cd ? data.requests[cs.id]?.[cd.k] || null : null;
+  // 選択中のセルの店舗・人・日
+  const sd = cell && sections.find((x) => x.store.id === cell.st);
+  const cs = sd && cell.sid && sd.staffInStore.find((s) => s.id === cell.sid);
+  const cd = sd && days.find((d) => d.k === cell.k);
+  const cr = cs && cd ? sd.requests[cs.id]?.[cd.k] || null : null;
 
-  // 日付をタップしたとき：その日の希望者（日ごとの表示の右側と同じ並び）
+  // 日付をタップしたとき：その店舗のその日の希望者（日ごとの表示の右側と同じ並び）
   const order = { pending: 0, approved: 1, rejected: 2 };
   const dayRows = cd && !cs ? [
-    ...staff.map((s) => ({ s, r: data.requests[s.id]?.[cd.k] })).filter((x) => x.r)
+    ...sd.staffInStore.map((s) => ({ s, r: sd.requests[s.id]?.[cd.k] })).filter((x) => x.r)
       .sort((a, b) => (a.r.type === "off") - (b.r.type === "off") || order[a.r.status] - order[b.r.status]),
     // 他店に希望・出勤がある人（休業日は出さない）と、運営・社員の出勤予定
-    ...(data.isClosed(cd) ? [] : staff.filter((s) => data.sharedOf(s.id, cd.k)).map((s) => ({ s, r: null }))),
-    ...(data.isClosed(cd) ? [] : staff.filter((s) => canOffice(s) && !data.requests[s.id]?.[cd.k] && !data.sharedOf(s.id, cd.k)).map((s) => ({ s, r: null }))),
+    ...(sd.isClosed(cd) ? [] : sd.staffInStore.filter((s) => sd.sharedOf(s.id, cd.k)).map((s) => ({ s, r: null }))),
+    ...(sd.isClosed(cd) ? [] : sd.staffInStore.filter((s) => canOffice(s) && !sd.requests[s.id]?.[cd.k] && !sd.sharedOf(s.id, cd.k)).map((s) => ({ s, r: null }))),
   ] : [];
   const dayPending = dayRows.filter((x) => x.r && x.r.status === "pending" && x.r.type !== "off");
-  const colOn = (k) => cell && !cell.sid && cell.k === k; // 日付の列を選択中
+  const colOn = (st, k) => cell && !cell.sid && cell.st === st && cell.k === k; // その店舗の日付の列を選択中
+  const sticky = "sticky left-0 z-10 px-3 whitespace-nowrap";
 
   return (
     <div className={cell ? (cs ? "pb-56" : "pb-[60vh]") : ""}>
@@ -379,74 +384,79 @@ function MonthGrid({ data, days }) {
         <table className="border-collapse" style={{ minWidth: 140 + days.length * cellW }}>
           <thead>
             <tr>
-              <th className="sticky left-0 z-10 bg-white text-left px-3 py-2 text-sm font-medium" style={{ minWidth: 140, borderRight: `2px solid ${NAVY}`, borderBottom: `1px solid ${LINE}` }}>名前</th>
+              <th className={`${sticky} bg-white text-left py-2 text-sm font-medium`} style={{ minWidth: 140, borderRight: `2px solid ${NAVY}`, borderBottom: `1px solid ${LINE}` }}>名前</th>
               {days.map((d) => {
-                const hol = data.isHoliday(d), closed = data.isClosed(d), on = cell?.k === d.k;
+                const hol = data.isHoliday(d), on = cell?.k === d.k;
                 return (
-                  <th key={d.k} onClick={() => setCell(colOn(d.k) ? null : { k: d.k })} title="この日の希望者を見る"
-                    className="cursor-pointer px-1 py-1 text-xs font-normal tabular-nums"
-                    style={{ width: cellW, minWidth: cellW, background: on ? hl : closed ? CLOSED_BG : hol ? "#F7F2F2" : "#fff", borderBottom: `1px solid ${LINE}`, color: dayColor(d, hol) }}>
+                  <th key={d.k} className="px-1 py-1 text-xs font-normal tabular-nums"
+                    style={{ width: cellW, minWidth: cellW, background: on ? hl : hol ? "#F7F2F2" : "#fff", borderBottom: `1px solid ${LINE}`, color: dayColor(d, hol) }}>
                     {d.d}<span className="opacity-70">({WD[d.w]})</span>
-                    {closed ? <span className="block opacity-60" style={{ color: NAVY }}>定休</span>
-                      : data.isRecruit(d.k) && <span className="block" style={{ color: RED }}>募集</span>}
                   </th>
                 );
               })}
             </tr>
           </thead>
-          <tbody>
-            {staff.length === 0 && <tr><td colSpan={days.length + 1} className="px-3 py-6 text-sm opacity-60">この店舗のスタッフがいません。</td></tr>}
-            {staff.map((s) => (
-              <tr key={s.id}>
-                <td className="sticky left-0 z-10 px-3 py-1.5 text-sm whitespace-nowrap"
-                  style={{ background: cell?.sid === s.id ? hl : "#fff", borderRight: `2px solid ${NAVY}`, borderBottom: "1px solid #EEF1F3" }}>
-                  {s.name}
-                  <span className="ml-1 text-xs opacity-60">{POSITIONS[s.position]}</span>
-                </td>
-                {days.map((d) => {
-                  const on = cell?.sid === s.id && cell?.k === d.k;
-                  return (
-                    <td key={d.k} onClick={() => setCell(on ? null : { sid: s.id, k: d.k })}
-                      className="text-center py-1 cursor-pointer"
-                      style={{ borderBottom: "1px solid #EEF1F3", background: on || colOn(d.k) ? hl : data.isClosed(d) ? CLOSED_BG : data.isHoliday(d) ? "#FBF8F8" : undefined, outline: on ? `2px solid ${NAVY}` : undefined, outlineOffset: -2 }}>
-                      {mark(s, d)}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-            {PART_KEYS.map((p, i) => (
-              <tr key={p}>
-                <td className="sticky left-0 z-10 bg-white px-3 py-1 text-xs whitespace-nowrap"
-                  style={{ borderRight: `2px solid ${NAVY}`, borderTop: i === 0 ? `2px solid ${NAVY}` : undefined }}>
-                  <Tag s={PARTS[p]}>{PARTS[p].label}</Tag><span className="ml-1 opacity-60">出勤/基準</span>
-                </td>
-                {days.map((d) => (
-                  <td key={d.k} className="text-center py-1" style={{ borderTop: i === 0 ? `2px solid ${NAVY}` : undefined, background: data.isClosed(d) ? CLOSED_BG : undefined }}>
-                    {!data.isClosed(d) && <PartGauge c={data.counts[d.k][p]} rule={data.ruleFor(d)} part={p} compact />}
+          {sections.map((D, si) => {
+            const sid = D.store.id;
+            const staff = D.staffInStore;
+            return (
+              <tbody key={sid}>
+                {/* 店舗の見出し行: 日付をタップするとこの店舗のその日の希望者を一覧で見る */}
+                <tr>
+                  <td className={`${sticky} py-1.5 text-sm font-medium`}
+                    style={{ background: "#F4F6F8", borderRight: `2px solid ${NAVY}`, borderTop: si > 0 ? `3px solid ${NAVY}` : undefined, borderBottom: `1px solid ${LINE}` }}>
+                    {D.store.name}
+                    {D.published && <span className="ml-1 text-xs px-1 rounded" style={{ background: "#8FBFA6", color: "#0F3A24" }}>公開中</span>}
                   </td>
-                ))}
-              </tr>
-            ))}
-            {/* 他店舗の不足（出勤が基準に足りない枠と人数） */}
-            {data.otherStores.map((o, i) => (
-              <tr key={o.store.id}>
-                <td className="sticky left-0 z-10 bg-white px-3 py-1 text-xs whitespace-nowrap"
-                  style={{ borderRight: `2px solid ${NAVY}`, borderTop: i === 0 ? `2px solid ${NAVY}` : undefined }}>
-                  {o.store.name}<span className="ml-1 opacity-60">の不足</span>
-                </td>
-                {days.map((d) => {
-                  const closed = o.isClosed(d), sh = o.shortOf(d);
-                  return (
-                    <td key={d.k} className="text-center py-1 text-xs tabular-nums" title={closed ? `${o.store.name} 定休日` : sh.length ? `${o.store.name}: ${sh.map(([p, n]) => `${PARTS[p].label}あと${n}人`).join("、")}` : `${o.store.name}: 基準どおり`}
-                      style={{ borderTop: i === 0 ? `2px solid ${NAVY}` : undefined, background: closed ? CLOSED_BG : undefined, color: RED }}>
-                      {closed ? "" : sh.length ? sh.map(([p, n]) => `${PARTS[p].short}${n}`).join(" ") : <span style={{ color: "#5A8F72" }}>✓</span>}
+                  {days.map((d) => {
+                    const closed = D.isClosed(d), on = colOn(sid, d.k);
+                    return (
+                      <td key={d.k} onClick={() => setCell(on ? null : { st: sid, k: d.k })} title={`${D.store.name} のこの日の希望者を見る`}
+                        className="cursor-pointer text-center py-1 text-xs"
+                        style={{ background: on ? hl : closed ? CLOSED_BG : "#F4F6F8", borderTop: si > 0 ? `3px solid ${NAVY}` : undefined, borderBottom: `1px solid ${LINE}` }}>
+                        {closed ? <span className="opacity-60">定休</span>
+                          : D.isRecruit(d.k) ? <span style={{ color: RED }}>募集</span>
+                          : <span className="opacity-30">一覧</span>}
+                      </td>
+                    );
+                  })}
+                </tr>
+                {staff.length === 0 && <tr><td colSpan={days.length + 1} className="px-3 py-4 text-sm opacity-60">この店舗のスタッフがいません。</td></tr>}
+                {staff.map((s) => (
+                  <tr key={s.id}>
+                    <td className={`${sticky} py-1.5 text-sm`}
+                      style={{ background: cell?.st === sid && cell?.sid === s.id ? hl : "#fff", borderRight: `2px solid ${NAVY}`, borderBottom: "1px solid #EEF1F3" }}>
+                      {s.name}
+                      <span className="ml-1 text-xs opacity-60">{POSITIONS[s.position]}</span>
                     </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
+                    {days.map((d) => {
+                      const on = cell?.st === sid && cell?.sid === s.id && cell?.k === d.k;
+                      return (
+                        <td key={d.k} onClick={() => setCell(on ? null : { st: sid, sid: s.id, k: d.k })}
+                          className="text-center py-1 cursor-pointer"
+                          style={{ borderBottom: "1px solid #EEF1F3", background: on || colOn(sid, d.k) ? hl : D.isClosed(d) ? CLOSED_BG : D.isHoliday(d) ? "#FBF8F8" : undefined, outline: on ? `2px solid ${NAVY}` : undefined, outlineOffset: -2 }}>
+                          {mark(D, s, d)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+                {PART_KEYS.map((p, i) => (
+                  <tr key={p}>
+                    <td className={`${sticky} bg-white py-1 text-xs`}
+                      style={{ borderRight: `2px solid ${NAVY}`, borderTop: i === 0 ? `2px solid ${NAVY}` : undefined }}>
+                      <Tag s={PARTS[p]}>{PARTS[p].label}</Tag><span className="ml-1 opacity-60">出勤/基準</span>
+                    </td>
+                    {days.map((d) => (
+                      <td key={d.k} className="text-center py-1" style={{ borderTop: i === 0 ? `2px solid ${NAVY}` : undefined, background: D.isClosed(d) ? CLOSED_BG : undefined }}>
+                        {!D.isClosed(d) && <PartGauge c={D.counts[d.k][p]} rule={D.ruleFor(d)} part={p} compact />}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            );
+          })}
         </table>
         </DualScroll>
         <div className="px-3 py-2 text-xs opacity-70 flex flex-wrap gap-x-4 gap-y-1">
@@ -455,8 +465,8 @@ function MonthGrid({ data, days }) {
           <span>✕＝休み</span>
           <span>休＝休み希望</span>
           <span>予＝出勤予定（運営・社員、枠は未定）</span>
-          {data.otherStores.length > 0 && <span>店舗名の1文字付き（薄い色）＝他店に出ている希望・出勤（タップでこの店舗に移せます）</span>}
-          <span>セルをタップ → その人の出勤・休みを決める。日付をタップ → その日の希望者を一覧で見る</span>
+          {multi && <span>店舗名の1文字付き（薄い色）＝他店に出ている希望・出勤（タップでその段の店舗に移せます）</span>}
+          <span>セルをタップ → その人の出勤・休みを決める。店舗名の行の日付をタップ → その店舗のその日の希望者を一覧で見る</span>
         </div>
       </Card>
 
@@ -464,29 +474,30 @@ function MonthGrid({ data, days }) {
         <div className="fixed inset-x-0 bottom-0 z-30 px-2 pb-2">
           <Card className="max-w-3xl mx-auto p-3 shadow-lg flex flex-col" style={{ maxHeight: cs ? undefined : "55vh" }}>
             <div className="flex flex-wrap items-center gap-2 mb-1 text-sm">
-              <span className="font-medium tabular-nums" style={{ color: dayColor(cd, data.isHoliday(cd)) }}>{fmt(cd.k)}</span>
+              {multi && <span className="text-xs px-1.5 rounded" style={{ background: NAVY, color: "#fff" }}>{sd.store.name}</span>}
+              <span className="font-medium tabular-nums" style={{ color: dayColor(cd, sd.isHoliday(cd)) }}>{fmt(cd.k)}</span>
               {holidayName(cd.k) && <span className="text-xs" style={{ color: RED }}>{holidayName(cd.k)}</span>}
-              {data.isClosed(cd) && <span className="text-xs opacity-70">定休日</span>}
-              {!data.isClosed(cd) && PART_KEYS.map((p) => (
-                <span key={p} className="flex items-center gap-1 text-xs"><Tag s={PARTS[p]}>{PARTS[p].short}</Tag><PartGauge c={data.counts[cd.k][p]} rule={data.ruleFor(cd)} part={p} compact /></span>
+              {sd.isClosed(cd) && <span className="text-xs opacity-70">定休日</span>}
+              {!sd.isClosed(cd) && PART_KEYS.map((p) => (
+                <span key={p} className="flex items-center gap-1 text-xs"><Tag s={PARTS[p]}>{PARTS[p].short}</Tag><PartGauge c={sd.counts[cd.k][p]} rule={sd.ruleFor(cd)} part={p} compact /></span>
               ))}
               <span className="ml-auto flex gap-2 text-xs">
-                {cs && <button onClick={() => setCell({ k: cd.k })} className="underline opacity-70">この日の全員を見る</button>}
+                {cs && <button onClick={() => setCell({ st: sd.store.id, k: cd.k })} className="underline opacity-70">この日の全員を見る</button>}
                 <button onClick={() => setCell(null)} className="opacity-60">閉じる</button>
               </span>
             </div>
-            <OtherStoresDay data={data} day={cd} />
+            <OtherStoresDay data={sd} day={cd} />
             {cs ? (
-              cr || (!data.isClosed(cd) && (canOffice(cs) || data.sharedOf(cs.id, cd.k))) ? (
-                <ul><StaffDayRow key={`${cs.id}:${cd.k}`} data={data} s={cs} day={cd} r={cr} /></ul>
+              cr || (!sd.isClosed(cd) && (canOffice(cs) || sd.sharedOf(cs.id, cd.k))) ? (
+                <ul><StaffDayRow key={`${sd.store.id}:${cs.id}:${cd.k}`} data={sd} s={cs} day={cd} r={cr} /></ul>
               ) : (
-                <div className="text-sm py-2"><span className="mr-2">{cs.name}</span><span className="opacity-60">{data.isClosed(cd) ? "定休日です" : "この日の希望はありません"}</span></div>
+                <div className="text-sm py-2"><span className="mr-2">{cs.name}</span><span className="opacity-60">{sd.isClosed(cd) ? "定休日です" : "この日の希望はありません"}</span></div>
               )
             ) : (
               <>
                 {dayRows.length === 0 ? <div className="text-sm opacity-60 py-2">この日の希望はまだありません。</div> : (
                   <ul className="divide-y overflow-y-auto" style={{ borderColor: "#EEF1F3" }}>
-                    {dayRows.map(({ s, r }) => <StaffDayRow key={`${r ? "" : "plan:"}${s.id}:${cd.k}`} data={data} s={s} day={cd} r={r || null} />)}
+                    {dayRows.map(({ s, r }) => <StaffDayRow key={`${sd.store.id}:${r ? "" : "plan:"}${s.id}:${cd.k}`} data={sd} s={s} day={cd} r={r || null} />)}
                   </ul>
                 )}
                 {dayPending.length > 0 && (

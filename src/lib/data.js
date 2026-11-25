@@ -170,41 +170,47 @@ export function useShiftData(ym, storeId) {
       }
       // その日の不足: [枠, あと何人][]（定休日は空）
       const shortOf = (day) => (isClosed(day) ? [] : ["prep", "lunch", "dinner"].map((p) => [p, ruleFor(day)[p] - counts[day.k][p].n]).filter(([, n]) => n > 0));
-      return { store: st, windows, staffInStore, requests, daySet, defaultType, typeOf, ruleFor, defaultClosed, isClosed, counts, shortOf };
+      const isHoliday = (day) => typeOf(day) !== "weekday";
+      const isRecruit = (k) => !!daySet[k]?.recruit;
+      // 複数店舗に所属する人の、他店に出ている希望・出勤（この店舗に希望がない日に代わりに見せる）
+      //   出勤 → 未定 → 休み希望 → 休み の順で1件
+      const sharedOf = (staffId, k) => {
+        if (requests[staffId]?.[k]) return null;
+        const ot = (requestsAll[staffId]?.[k] || []).filter((r) => r.store_id !== st.id);
+        return ot.length ? [...ot].sort((a, b) => rank(a) - rank(b))[0] : null;
+      };
+      const published = raw.pubs.some((p) => p.store_id === st.id);
+      // 締切: この日の終わりまで入力できる。過ぎたら募集中の日以外は変更依頼で受け付ける
+      const deadline = raw.monthSettings.find((m) => m.store_id === st.id)?.deadline || null;
+      const deadlinePassed = !!deadline && today > deadline;
+      const isLocked = (day) => deadlinePassed && !isRecruit(day.k);
+      const dayHours = (k) => hoursAll[`${st.id}|${k}`] || null;
+      return { ...common, store: st, windows, staffInStore, requests, daySet, defaultType, typeOf, isHoliday, ruleFor, isRecruit, defaultClosed, isClosed, counts, shortOf, sharedOf, published, deadline, deadlinePassed, isLocked, dayHours };
     };
-    const cur = storeView(store);
-    const { windows, staffInStore, requests, daySet, typeOf, ruleFor, isClosed } = cur;
-    const isHoliday = (day) => typeOf(day) !== "weekday";
-    const isRecruit = (k) => !!daySet[k]?.recruit;
-    const otherStores = raw.stores.filter((s) => s.id !== store.id).map(storeView);
-    // 複数店舗に所属する人の、他店に出ている希望・出勤（この店舗に希望がない日に代わりに見せる）
-    //   出勤 → 未定 → 休み希望 → 休み の順で1件
+
     const rank = (r) => (r.type === "off" ? 2 : { approved: 0, pending: 1, rejected: 3 }[r.status]);
-    const sharedOf = (staffId, k) => {
-      if (requests[staffId]?.[k]) return null;
-      const ot = (requestsAll[staffId]?.[k] || []).filter((r) => r.store_id !== store.id);
-      return ot.length ? [...ot].sort((a, b) => rank(a) - rank(b))[0] : null;
-    };
     const storeName = (id) => raw.stores.find((s) => s.id === id)?.name || "";
-    const published = raw.pubs.some((p) => p.store_id === store.id);
-    // 締切: この日の終わりまで入力できる。過ぎたら募集中の日以外は変更依頼で受け付ける
-    const deadline = raw.monthSettings.find((m) => m.store_id === store.id)?.deadline || null;
     const t = new Date();
-    const deadlinePassed = !!deadline && dkey(t.getFullYear(), t.getMonth(), t.getDate()) > deadline;
-    const isLocked = (day) => deadlinePassed && !isRecruit(day.k);
+    const today = dkey(t.getFullYear(), t.getMonth(), t.getDate());
     const logs = Object.fromEntries(raw.logs.map((l) => [l.request_id, l]));
     // 実働: 個別入力があればそれ、なければその日の営業時間（一括入力）から計算
     // （全店舗表示でも使うので、希望の店舗の設定で計算する）
     const hoursAll = Object.fromEntries(raw.daySettings.filter((d) => d.work_hours).map((d) => [`${d.store_id}|${d.date}`, d.work_hours]));
-    const dayHours = (k) => hoursAll[`${store.id}|${k}`] || null;
     const windowsOf = (sid) => ({ ...DEFAULT_WINDOWS, ...(raw.stores.find((s) => s.id === sid)?.windows || {}) });
     const workOf = (r) => {
       const w = autoWork(r, hoursAll[`${r.store_id}|${r.date}`], windowsOf(r.store_id), logs[r.id]);
       return w && logs[r.id] ? { ...w, individual: true } : w;
     };
+    const common = { ...raw, membership, requestsAll, storeName, logs, workOf };
 
-    const { defaultType, defaultClosed, counts, shortOf } = cur;
-    return { ...raw, store, windows, membership, staffInStore, requests, requestsAll, sharedOf, storeName, otherStores, daySet, defaultType, typeOf, isHoliday, ruleFor, isRecruit, defaultClosed, isClosed, published, deadline, deadlinePassed, isLocked, counts, shortOf, logs, dayHours, workOf };
+    // 表示中の店舗を先頭に、全店舗分を作る。どの店舗の分も同じ形（data として各画面に渡せる）
+    //   allStores = [表示中の店舗, ...他店舗] / otherStores = 自分以外の店舗
+    const allStores = [store, ...raw.stores.filter((s) => s.id !== store.id)].map(storeView);
+    for (const v of allStores) {
+      v.allStores = allStores;
+      v.otherStores = allStores.filter((o) => o !== v);
+    }
+    return allStores[0];
   }, [raw, days, storeId]);
 
   return { data: view, days, mk, error, reload };
