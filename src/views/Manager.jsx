@@ -627,7 +627,7 @@ function ApproveView({ data, days, mk }) {
     await api.setPublished(data.store.id, mk, on);
     if (on && confirm("公開しました。スタッフにLINEで知らせますか？")) await notifyPublish();
   };
-  // 募集をLINEで知らせる: 今日以降の募集中の日がある店舗ごとに、その店舗のスタッフへ送る
+  // LINEで知らせる: 今日以降の募集中の日がある店舗ごとに、その店舗のスタッフへ送る
   const t0 = new Date();
   const today = `${t0.getFullYear()}-${pad(t0.getMonth() + 1)}-${pad(t0.getDate())}`;
   const recruitTargets = data.allStores
@@ -725,7 +725,7 @@ function ApproveView({ data, days, mk }) {
         {recruitTargets.length > 0 && (
           <div className="flex items-center gap-1">
             {recruitTargets.length > 1 && (
-              <select value={recruitTo} onChange={(e) => setRecruitTo(e.target.value)} title="募集を知らせる店舗"
+              <select value={recruitTo} onChange={(e) => setRecruitTo(e.target.value)} title="知らせる店舗"
                 className="border rounded px-1 py-1.5 text-xs bg-white" style={{ borderColor: LINE }}>
                 <option value="">すべての店舗</option>
                 {recruitTargets.map(({ D, ds }) => <option key={D.store.id} value={D.store.id}>{D.store.name}（{ds.length}日）</option>)}
@@ -733,7 +733,7 @@ function ApproveView({ data, days, mk }) {
             )}
             <Btn disabled={notifying} onClick={notifyRecruit}>
               <span style={{ color: RED }}>{notifying ? "送信中…"
-                : `${recruitSel.length === 1 && recruitTargets.length > 1 ? `${recruitSel[0].D.store.name}に` : ""}募集をLINEで知らせる（${recruitSel.reduce((a, x) => a + x.ds.length, 0)}日）`}</span>
+                : `${recruitSel.length === 1 && recruitTargets.length > 1 ? `${recruitSel[0].D.store.name}に` : ""}募集を告知（${recruitSel.reduce((a, x) => a + x.ds.length, 0)}日）`}</span>
             </Btn>
           </div>
         )}

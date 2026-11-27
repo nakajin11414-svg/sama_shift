@@ -18,7 +18,7 @@ export function PrintButton({ stores, days, mk, kind, small }) {
     return () => { clearTimeout(t); window.removeEventListener("afterprint", done); };
   }, [job]);
   if (!stores.length) return null;
-  const label = kind === "wish" ? "希望を印刷" : "印刷";
+  const label = kind === "wish" ? "印刷" : "印刷";
   return (
     <div className="flex items-center gap-1">
       {stores.length > 1 && (
