@@ -32,8 +32,9 @@ export const DualScroll = ({ children, className = "" }) => {
   );
 };
 
-export const Tag = ({ s, children, title, style }) => (
-  <span title={title} className="inline-block rounded px-1.5 py-0.5 text-xs leading-tight"
+// tight: 月の表の細い列用（余白を詰めて、折り返さない）
+export const Tag = ({ s, children, title, style, tight }) => (
+  <span title={title} className={`inline-block rounded text-xs leading-tight ${tight ? "px-0.5 whitespace-nowrap tracking-tighter" : "px-1.5 py-0.5"}`}
     style={{ background: s.bg, color: s.fg, ...style }}>{children}</span>
 );
 
@@ -53,8 +54,16 @@ export const Card = ({ children, className = "", style, ...rest }) => (
   <div className={`rounded bg-white ${className}`} style={{ border: `1px solid ${LINE}`, ...style }} {...rest}>{children}</div>
 );
 
-export const Gauge = ({ n, p = 0, need }) => {
+// tight: 月の表の細い列用。未定の人数（+1）は下の行に小さく出し、横幅を取らない。warn は赤い枠で示す
+export const Gauge = ({ n, p = 0, need, tight, warn }) => {
   const tone = n > need ? { bg: "#F7C6C6", fg: "#7A1E1E" } : n < need ? { bg: "#FBE7B2", fg: "#5C4300" } : { bg: "#CFE8D8", fg: "#0F3A24" };
+  if (tight) return (
+    <span className="inline-block tabular-nums text-xs leading-tight px-1 rounded whitespace-nowrap text-center"
+      style={{ background: tone.bg, color: tone.fg, boxShadow: warn ? `inset 0 0 0 1.5px ${RED}` : undefined }}>
+      {n}<span className="opacity-60">/{need}</span>
+      {p > 0 && <span className="block opacity-70" style={{ fontSize: 10 }}>+{p}</span>}
+    </span>
+  );
   return (
     <span className="tabular-nums text-xs px-1.5 py-0.5 rounded" style={{ background: tone.bg, color: tone.fg }}>
       {n}<span className="opacity-60">/{need}</span>{p > 0 && <span className="opacity-60"> +{p}</span>}

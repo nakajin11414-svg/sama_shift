@@ -29,9 +29,11 @@ export default function ManagerView(props) {
 }
 
 // 枠ごとの人数ゲージ＋デリバリー・厨房・仕込みの警告
-function PartGauge({ c, rule, part, compact }) {
+function PartGauge({ c, rule, part, compact, tight }) {
   const sh = skillShortage(c, rule, part);
   const warn = c.n > 0 && sh.any;
+  // 月の表の細い列: 「!」を横に足さず、赤い枠で示す
+  if (tight) return <Gauge n={c.n} p={c.pending} need={rule[part]} tight warn={warn} />;
   return (
     <span className="inline-flex items-center gap-0.5">
       <Gauge n={c.n} p={c.pending} need={rule[part]} />
@@ -387,24 +389,24 @@ function MonthGrid({ data, days }) {
   const mark = (D, s, d) => {
     const r = D.requests[s.id]?.[d.k];
     if (r) {
-      if (r.type === "off") return <Tag s={OFF_WISH} title="休み希望">{OFF_WISH.short}</Tag>;
-      if (r.status === "approved") return <Tag s={slotStyle(r)} title={`出勤 ${slotText(r)}`}>{slotShort(r)}</Tag>;
+      if (r.type === "off") return <Tag tight s={OFF_WISH} title="休み希望">{OFF_WISH.short}</Tag>;
+      if (r.status === "approved") return <Tag tight s={slotStyle(r)} title={`出勤 ${slotText(r)}`}>{slotShort(r)}</Tag>;
       if (r.status === "rejected") return <span className="text-xs" style={{ color: STATUS.rejected.fg }} title={`休み（希望: ${slotText(r)}）`}>✕</span>;
       const st = slotStyle(r);
-      return <Tag s={{ bg: "#fff", fg: st.fg }} style={{ border: `1px dashed ${st.fg}` }} title={`未定（希望: ${slotText(r)}）`}>{slotShort(r)}</Tag>;
+      return <Tag tight s={{ bg: "#fff", fg: st.fg }} style={{ border: `1px dashed ${st.fg}` }} title={`未定（希望: ${slotText(r)}）`}>{slotShort(r)}</Tag>;
     }
     // 他店に出ている希望・出勤（店舗名の1文字目を付けて薄く出す）
     const sh = D.sharedOf(s.id, d.k);
     if (sh) {
       const from = D.storeName(sh.store_id);
-      const ini = <span className="opacity-70">{from.slice(0, 1)}</span>;
-      if (sh.type === "off") return <span className="text-xs px-1 rounded" style={{ background: OFF_WISH.bg, color: OFF_WISH.fg, opacity: 0.6 }} title={`休み希望（${from}）`}>{ini}{OFF_WISH.short}</span>;
-      if (sh.status === "approved") return <span className="text-xs px-1 rounded" style={{ background: "#E4E7EA", color: "#5A6B7A" }} title={`${from}で出勤 ${slotText(sh)}`}>{ini}{slotShort(sh)}</span>;
+      const ini = <span className="opacity-70" style={{ fontSize: 10 }}>{from.slice(0, 1)}</span>;
+      if (sh.type === "off") return <span className="inline-block text-xs px-0.5 rounded whitespace-nowrap tracking-tighter leading-tight" style={{ background: OFF_WISH.bg, color: OFF_WISH.fg, opacity: 0.6 }} title={`休み希望（${from}）`}>{ini}{OFF_WISH.short}</span>;
+      if (sh.status === "approved") return <span className="inline-block text-xs px-0.5 rounded whitespace-nowrap tracking-tighter leading-tight" style={{ background: "#E4E7EA", color: "#5A6B7A" }} title={`${from}で出勤 ${slotText(sh)}`}>{ini}{slotShort(sh)}</span>;
       if (sh.status === "rejected") return <span className="text-xs" style={{ color: STATUS.rejected.fg, opacity: 0.6 }} title={`${from}で休み（希望: ${slotText(sh)}）`}>{ini}✕</span>;
       const st = slotStyle(sh);
-      return <span className="text-xs px-1 rounded" style={{ border: `1px dotted ${st.fg}`, color: st.fg }} title={`${from}に希望・未定（${slotText(sh)}）。タップして${D.store.name}で出勤にできます`}>{ini}{slotShort(sh)}</span>;
+      return <span className="inline-block text-xs px-0.5 rounded whitespace-nowrap tracking-tighter leading-tight" style={{ border: `1px dotted ${st.fg}`, color: st.fg }} title={`${from}に希望・未定（${slotText(sh)}）。タップして${D.store.name}で出勤にできます`}>{ini}{slotShort(sh)}</span>;
     }
-    if (!D.isClosed(d) && canOffice(s)) return <span className="text-xs px-1 rounded" style={{ border: "1px dashed #B8C2CC", color: "#5A6B7A" }} title="出勤予定（枠は未定）">予</span>;
+    if (!D.isClosed(d) && canOffice(s)) return <span className="inline-block text-xs px-0.5 rounded whitespace-nowrap tracking-tighter leading-tight" style={{ border: "1px dashed #B8C2CC", color: "#5A6B7A" }} title="出勤予定（枠は未定）">予</span>;
     return null;
   };
 
@@ -419,7 +421,7 @@ function MonthGrid({ data, days }) {
     return (
       <button onClick={(e) => { e.stopPropagation(); api.setRecruit(D.store.id, d.k, !rec); }}
         title={rec ? `${D.store.name}: 募集中（押すと取り下げ）` : `${D.store.name}: 押すと募集する${short ? "（人が足りません）" : ""}`}
-        className={`text-xs rounded ${small ? "px-1" : "px-1.5 py-0.5"}`}
+        className={`text-xs rounded whitespace-nowrap ${small ? "px-0.5 tracking-tighter" : "px-1.5 py-0.5"}`}
         style={rec ? { background: RED, color: "#fff" } : { border: `1px dashed ${short ? RED : "#B8C2CC"}`, color: short ? RED : "#B8C2CC" }}>
         {rec ? "募集中" : "募集"}
       </button>
@@ -478,7 +480,7 @@ function MonthGrid({ data, days }) {
                   {days.map((d) => {
                     const closed = D.isClosed(d);
                     return (
-                      <td key={d.k} className="text-center py-1 text-xs"
+                      <td key={d.k} className="text-center py-1 px-0.5 text-xs"
                         style={{ background: colOn(d.k) ? hl : closed ? CLOSED_BG : "#F4F6F8", borderTop: si > 0 ? `3px solid ${NAVY}` : undefined, borderBottom: `1px solid ${LINE}` }}>
                         {closed ? <span className="opacity-60">定休</span> : recruitBtn(D, d, true)}
                       </td>
@@ -507,7 +509,7 @@ function MonthGrid({ data, days }) {
                       const on = cell?.st === sid && cell?.sid === s.id && cell?.k === d.k;
                       return (
                         <td key={d.k} onClick={() => setCell(on ? null : { st: sid, sid: s.id, k: d.k })}
-                          className="text-center py-1 cursor-pointer"
+                          className="text-center py-1 px-0.5 cursor-pointer"
                           style={{ borderBottom: "1px solid #EEF1F3", background: on || colOn(d.k) ? hl : D.isClosed(d) ? CLOSED_BG : D.isHoliday(d) ? "#FBF8F8" : undefined, outline: on ? `2px solid ${NAVY}` : undefined, outlineOffset: -2, ...ind }}>
                           {mark(D, s, d)}
                         </td>
@@ -523,8 +525,8 @@ function MonthGrid({ data, days }) {
                       <Tag s={PARTS[p]}>{PARTS[p].label}</Tag><span className="ml-1 opacity-60">出勤/基準</span>
                     </td>
                     {days.map((d) => (
-                      <td key={d.k} className="text-center py-1" style={{ borderTop: i === 0 ? `2px solid ${NAVY}` : undefined, background: D.isClosed(d) ? CLOSED_BG : undefined }}>
-                        {!D.isClosed(d) && <PartGauge c={D.counts[d.k][p]} rule={D.ruleFor(d)} part={p} compact />}
+                      <td key={d.k} className="text-center py-1 px-0.5" style={{ borderTop: i === 0 ? `2px solid ${NAVY}` : undefined, background: D.isClosed(d) ? CLOSED_BG : undefined }}>
+                        {!D.isClosed(d) && <PartGauge c={D.counts[d.k][p]} rule={D.ruleFor(d)} part={p} tight />}
                       </td>
                     ))}
                   </tr>
@@ -540,6 +542,7 @@ function MonthGrid({ data, days }) {
           <span>✕＝休み</span>
           <span>休＝休み希望</span>
           <span>予＝出勤予定（運営・社員、枠は未定）</span>
+          <span>人数の下の +1＝未定の希望の人数。赤い枠＝配達・厨房・仕込みのできる人が足りない</span>
           {multi && <span>店舗名の1文字付き（薄い色）＝他店に出ている希望・出勤（タップでその段の店舗に移せます）</span>}
           <span>セルをタップ → その人の出勤・休みを決める。日付をタップ → {multi ? "全店舗の" : ""}その日の希望者を一覧で見る。店舗名の行の「募集」→ その店舗のその日を募集中にする（赤い点線＝人が足りない日）</span>
         </div>
