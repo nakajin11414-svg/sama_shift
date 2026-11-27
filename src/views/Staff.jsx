@@ -38,9 +38,10 @@ export default function StaffView({ data, days, profile }) {
 
   const mine = data.requests[me.id] || {};
   const myStores = data.stores.filter((s) => data.membership[me.id]?.has(s.id));
-  // 出勤・休みの結果（✓・✕）は、その店舗のシフトを公開するまでスタッフには見せない（管理者は常に見える）
+  // 出勤・休みの結果（✓・✕）は、その店舗のシフトを公開するまで希望入力には出さない
+  // （管理者が自分や代理で開いたときも同じ。結果は「シフト管理」の調整表で確認する）
   const pubOf = (sid) => !!data.allStores?.find((D) => D.store.id === sid)?.published;
-  const st = (r) => (isManager || pubOf(r.store_id) ? r.status : "pending");
+  const st = (r) => (pubOf(r.store_id) ? r.status : "pending");
   const others = (k) => (data.requestsAll[me.id]?.[k] || []).filter((r) => r.store_id !== data.store.id && st(r) !== "rejected");
   const lead = days[0].w;
   const toggle = (k) => setSel((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
@@ -207,7 +208,7 @@ export default function StaffView({ data, days, profile }) {
           );
         })}
       </div>
-      <div className="mt-1 text-xs opacity-70">✓ 出勤 ／ ✕ 休み ／ 印なし 確認待ち{!isManager && !data.published && "（✓・✕はシフト公開後に表示）"} ／ 点線・店舗名の1文字付き = 他店で出した希望 ／ 灰色 = 定休日（選べません）{offMode && " ／ 休 = 休み希望（それ以外の日は出勤予定）"}{data.deadlinePassed && !isManager && " ／ 依頼中 = 変更依頼の確認待ち"}</div>
+      <div className="mt-1 text-xs opacity-70">✓ 出勤 ／ ✕ 休み ／ 印なし 確認待ち{!data.published && "（✓・✕はシフト公開後に表示）"} ／ 点線・店舗名の1文字付き = 他店で出した希望 ／ 灰色 = 定休日（選べません）{offMode && " ／ 休 = 休み希望（それ以外の日は出勤予定）"}{data.deadlinePassed && !isManager && " ／ 依頼中 = 変更依頼の確認待ち"}</div>
 
       <Card className="mt-4 p-4" style={mode === "request" ? { borderColor: "#E0B35A", background: "#FFFBEF" } : undefined}>
         {mode === "mixed" ? (

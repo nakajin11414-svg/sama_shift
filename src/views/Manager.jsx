@@ -335,7 +335,7 @@ function MonthGrid({ data, days }) {
   const orderLocked = useContext(OrderLockCtx);
   const [cell, setCell] = useState(null); // { st: 店舗id, sid?: スタッフid, k: 日付 }
   useEffect(() => { setCell(null); }, [data.store?.id, days[0].k]);
-  const cellW = 42; // 日付の列の最小幅（PCで31日分が横に収まるように）
+  const cellW = 60;
   const hl = "#E3E9F0";
   const sections = data.allStores; // [表示中の店舗, ...他店舗]（どれも data と同じ形）
   const multi = sections.length > 1;
