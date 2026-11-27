@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api, notifyResult, usePayPeriodData } from "../lib/data.js";
 import { WD, PARTS, PART_KEYS, STATUS, CHANGE_STATUS, OFFICE, OFF_WISH, canOffice, isPartTime, TYPE, SKILLS, POSITIONS, skillShort, NAVY, LINE, RED, CLOSED_BG, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, DEFAULT_WINDOWS, slotText, slotShort, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm, hourLabel, payPeriodOfMonth, shiftPayPeriod, periodDays } from "../lib/util.js";
 import { Btn, Card, Tag, Gauge, DualScroll } from "../ui.jsx";
@@ -244,8 +244,18 @@ function SlotEditor({ r, windows, office, onSave, onDone }) {
 
 // 1人・1日分の出勤・休みの操作（日ごとの表示と月の表で共通）
 //   r = その日の希望（null なら運営・社員の出勤予定）
-function StaffDayRow({ data, s, day, r }) {
+// 調整表のロック（誤タップ防止）。ロック中は出勤・休み・募集・並べ替えの操作を出さない
+const LockCtx = createContext(false);
+
+function StaffDayRow(props) {
+  const locked = useContext(LockCtx);
+  // ロック中は操作ボタンを出さない（表示だけ）
+  return <StaffDayRowInner {...props} locked={locked} />;
+}
+
+function StaffDayRowInner({ data, s, day, r, locked }) {
   const [editing, setEditing] = useState(false);
+  useEffect(() => { if (locked) setEditing(false); }, [locked]);
   const S = data.store;
   const ot = (data.requestsAll[s.id]?.[day.k] || []).filter((x) => x.store_id !== S.id && x.status !== "rejected");
   const li = "flex flex-wrap items-center gap-2 py-2 text-sm";
@@ -266,11 +276,11 @@ function StaffDayRow({ data, s, day, r }) {
         <span className="text-xs px-1.5 rounded" style={{ background: "#EEF1F3", border: `1px solid ${LINE}` }}>{from}</span>
         {sh.type === "off" ? <Tag s={OFF_WISH}>{OFF_WISH.label}</Tag> : <Tag s={slotStyle(sh)}>{slotText(sh)}</Tag>}
         {label && <span className="text-xs" style={{ color: sh.status === "approved" ? "#0F3A24" : sh.status === "rejected" ? STATUS.rejected.fg : "#7A4A00" }}>{label}</span>}
-        <span className="ml-auto flex gap-1">
+        {!locked && <span className="ml-auto flex gap-1">
           <Btn small tone={sh.status === "approved" && sh.type !== "off" ? undefined : "primary"} onClick={() => setEditing(!editing)}>
             {sh.status === "approved" && sh.type !== "off" ? `${S.name}に移す` : `${S.name}で出勤`}
           </Btn>
-        </span>
+        </span>}
         {editing && <SlotEditor r={sh} windows={data.windows} office={canOffice(s)} onSave={move} onDone={() => setEditing(false)} />}
       </li>
     );
@@ -281,10 +291,10 @@ function StaffDayRow({ data, s, day, r }) {
     <li className={li}>
       <span className="w-24 truncate">{s.name}{pos}</span>
       <Tag s={STATUS.pending}>出勤予定</Tag>
-      <span className="ml-auto flex gap-1">
+      {!locked && <span className="ml-auto flex gap-1">
         <Btn small tone="primary" onClick={() => setEditing(!editing)}>出勤</Btn>
         <Btn small tone="danger" onClick={() => api.upsertRequests(s.id, S.id, [day.k], "off", [], null, null, "pending")}>休み</Btn>
-      </span>
+      </span>}
       {editing && (
         <SlotEditor r={null} windows={data.windows} office onDone={() => setEditing(false)}
           onSave={(slot) => api.upsertRequests(s.id, S.id, [day.k], slot.type, slot.parts, slot.start_time, slot.end_time, "approved")} />
@@ -297,10 +307,10 @@ function StaffDayRow({ data, s, day, r }) {
     <li className={li} style={{ opacity: 0.7 }}>
       <span className="w-24 truncate">{s.name}{pos}</span>
       <Tag s={OFF_WISH}>{OFF_WISH.label}</Tag>
-      <span className="ml-auto flex gap-1">
+      {!locked && <span className="ml-auto flex gap-1">
         <Btn small onClick={() => setEditing(!editing)}>出勤にする</Btn>
         <Btn small onClick={() => confirm(`${s.name} さんの休み希望を取り消して、出勤予定に戻しますか？`) && api.deleteRequests(s.id, S.id, [day.k])}>取消</Btn>
-      </span>
+      </span>}
       {editing && <SlotEditor r={r} windows={data.windows} office onDone={() => setEditing(false)} />}
     </li>
   );
@@ -315,11 +325,11 @@ function StaffDayRow({ data, s, day, r }) {
       <Tag s={STATUS[r.status]}>{STATUS[r.status].label}</Tag>
       {r.desired && <span className="text-xs opacity-60">（希望: {slotText(r.desired)}）</span>}
       {ot.length > 0 && <span className="text-xs" style={{ color: "#7A4A00" }} title={ot.map((x) => `${data.stores.find((st) => st.id === x.store_id)?.name}: ${slotText(x)}`).join("、")}>他店も</span>}
-      <span className="ml-auto flex gap-1">
+      {!locked && <span className="ml-auto flex gap-1">
         <Btn small tone={r.status === "approved" ? undefined : "primary"} onClick={() => setEditing(!editing)}>{r.status === "approved" ? "枠を変更" : "出勤"}</Btn>
         {r.status !== "rejected" && <Btn small tone="danger" onClick={() => api.setStatus(r.id, "rejected")}>休み</Btn>}
         {r.status !== "pending" && <Btn small onClick={() => api.resetRequest(r)}>戻す</Btn>}
-      </span>
+      </span>}
       {editing && <SlotEditor r={r} windows={data.windows} office={canOffice(s)} onDone={() => setEditing(false)} />}
     </li>
   );
@@ -328,12 +338,52 @@ function StaffDayRow({ data, s, day, r }) {
 // 月の表（確定シフトと同じ形）。全店舗を1つの表にまとめ、表示中の店舗を先頭に、他店舗を下に並べる
 // セルをタップすると下に出勤・休みの操作が出る（操作はそのセルの店舗に対して行う）
 function MonthGrid({ data, days }) {
+  const locked = useContext(LockCtx);
   const [cell, setCell] = useState(null); // { st: 店舗id, sid?: スタッフid, k: 日付 }
   useEffect(() => { setCell(null); }, [data.store?.id, days[0].k]);
   const cellW = 60;
   const hl = "#E3E9F0";
   const sections = data.allStores; // [表示中の店舗, ...他店舗]（どれも data と同じ形）
   const multi = sections.length > 1;
+
+  // 行の並べ替え（名前の左の ⠿ をドラッグ）。並び順はスタッフ名簿の順（全店舗共通）
+  // マウスでもスマホの指でも動くように Pointer Events で実装する
+  const [rowOrder, setRowOrder] = useState(null); // 保存中に先に並びを反映する（ids）
+  useEffect(() => { setRowOrder(null); }, [data.staff]);
+  const rank = rowOrder ? Object.fromEntries(rowOrder.map((id, i) => [id, i])) : null;
+  const sorted = (list) => (rank ? [...list].sort((a, b) => (rank[a.id] ?? 1e9) - (rank[b.id] ?? 1e9)) : list);
+  const drag = useRef(null); // { sec: 店舗id, id: スタッフid }
+  const [dragId, setDragId] = useState(null);
+  const [over, setOver] = useState(null); // { id, after }
+  const endDrag = () => { drag.current = null; setDragId(null); setOver(null); };
+  const dragStart = (e, sec, id) => {
+    if (locked) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    drag.current = { sec, id };
+    setDragId(id);
+  };
+  const dragMove = (e) => {
+    if (!drag.current) return;
+    // 画面の端に来たら少しスクロールする
+    if (e.clientY < 60) window.scrollBy(0, -12);
+    else if (e.clientY > window.innerHeight - 60) window.scrollBy(0, 12);
+    const tr = document.elementFromPoint(e.clientX, e.clientY)?.closest("tr[data-row]");
+    if (!tr || tr.dataset.sec !== drag.current.sec) return setOver(null);
+    const rect = tr.getBoundingClientRect();
+    setOver({ id: tr.dataset.row, after: e.clientY > rect.top + rect.height / 2 });
+  };
+  const dragEnd = async () => {
+    const d = drag.current, o = over;
+    endDrag();
+    if (!d || !o || o.id === d.id) return;
+    const ids = sorted(data.staff).map((s) => s.id).filter((id) => id !== d.id);
+    const at = ids.indexOf(o.id);
+    if (at < 0) return;
+    ids.splice(o.after ? at + 1 : at, 0, d.id);
+    setRowOrder(ids);
+    try { await api.reorderStaff(ids, data.staff); } catch { setRowOrder(null); }
+  };
 
   const mark = (D, s, d) => {
     const r = D.requests[s.id]?.[d.k];
@@ -367,6 +417,7 @@ function MonthGrid({ data, days }) {
   // 募集の切り替え（店舗・日ごと）
   const recruitBtn = (D, d, small) => {
     const rec = D.isRecruit(d.k), short = D.shortOf(d).length > 0;
+    if (locked) return rec ? <span className={`text-xs rounded ${small ? "px-1" : "px-1.5 py-0.5"}`} style={{ background: RED, color: "#fff" }}>募集中</span> : null;
     return (
       <button onClick={(e) => { e.stopPropagation(); api.setRecruit(D.store.id, d.k, !rec); }}
         title={rec ? `${D.store.name}: 募集中（押すと取り下げ）` : `${D.store.name}: 押すと募集する${short ? "（人が足りません）" : ""}`}
@@ -415,7 +466,7 @@ function MonthGrid({ data, days }) {
           </thead>
           {sections.map((D, si) => {
             const sid = D.store.id;
-            const staff = D.staffInStore;
+            const staff = sorted(D.staffInStore);
             return (
               <tbody key={sid}>
                 {/* 店舗の見出し行: 日ごとの募集の切り替え（定休日は出さない） */}
@@ -436,10 +487,20 @@ function MonthGrid({ data, days }) {
                   })}
                 </tr>
                 {staff.length === 0 && <tr><td colSpan={days.length + 1} className="px-3 py-4 text-sm opacity-60">この店舗のスタッフがいません。</td></tr>}
-                {staff.map((s) => (
-                  <tr key={s.id}>
+                {staff.map((s) => {
+                  // ドラッグ中: 落とす位置に線を出す
+                  const ind = over?.id === s.id && dragId && dragId !== s.id && drag.current?.sec === sid
+                    ? (over.after ? { borderBottom: `3px solid ${NAVY}` } : { borderTop: `3px solid ${NAVY}` }) : {};
+                  const dragging = dragId === s.id && drag.current?.sec === sid;
+                  return (
+                  <tr key={s.id} data-row={s.id} data-sec={sid} style={{ opacity: dragging ? 0.5 : 1 }}>
                     <td className={`${sticky} py-1.5 text-sm`}
-                      style={{ background: cell?.st === sid && cell?.sid === s.id ? hl : "#fff", borderRight: `2px solid ${NAVY}`, borderBottom: "1px solid #EEF1F3" }}>
+                      style={{ background: dragging || (cell?.st === sid && cell?.sid === s.id) ? hl : "#fff", borderRight: `2px solid ${NAVY}`, borderBottom: "1px solid #EEF1F3", ...ind }}>
+                      {!locked && (
+                        <span onPointerDown={(e) => dragStart(e, sid, s.id)} onPointerMove={dragMove} onPointerUp={dragEnd} onPointerCancel={endDrag}
+                          title="ドラッグで並べ替え" className="inline-block mr-1.5 px-0.5 opacity-50 select-none"
+                          style={{ cursor: dragging ? "grabbing" : "grab", touchAction: "none" }}>⠿</span>
+                      )}
                       {s.name}
                       <span className="ml-1 text-xs opacity-60">{POSITIONS[s.position]}</span>
                     </td>
@@ -448,13 +509,14 @@ function MonthGrid({ data, days }) {
                       return (
                         <td key={d.k} onClick={() => setCell(on ? null : { st: sid, sid: s.id, k: d.k })}
                           className="text-center py-1 cursor-pointer"
-                          style={{ borderBottom: "1px solid #EEF1F3", background: on || colOn(d.k) ? hl : D.isClosed(d) ? CLOSED_BG : D.isHoliday(d) ? "#FBF8F8" : undefined, outline: on ? `2px solid ${NAVY}` : undefined, outlineOffset: -2 }}>
+                          style={{ borderBottom: "1px solid #EEF1F3", background: on || colOn(d.k) ? hl : D.isClosed(d) ? CLOSED_BG : D.isHoliday(d) ? "#FBF8F8" : undefined, outline: on ? `2px solid ${NAVY}` : undefined, outlineOffset: -2, ...ind }}>
                           {mark(D, s, d)}
                         </td>
                       );
                     })}
                   </tr>
-                ))}
+                  );
+                })}
                 {PART_KEYS.map((p, i) => (
                   <tr key={p}>
                     <td className={`${sticky} bg-white py-1 text-xs`}
@@ -525,7 +587,7 @@ function MonthGrid({ data, days }) {
                           {rows.map(({ s, r }) => <StaffDayRow key={`${D.store.id}:${r ? "" : "plan:"}${s.id}:${cd.k}`} data={D} s={s} day={cd} r={r || null} />)}
                         </ul>
                       )}
-                      {pend.length > 0 && (
+                      {!locked && pend.length > 0 && (
                         <div className="mt-1 flex justify-end">
                           <Btn small onClick={() => pend.forEach((x) => api.setStatus(x.r.id, "approved"))}>{multi ? `${D.store.name}の未定をすべて出勤` : "未定をすべて出勤"}</Btn>
                         </div>
@@ -544,6 +606,9 @@ function MonthGrid({ data, days }) {
 
 function ApproveView({ data, days, mk }) {
   const [view, setView] = useState("month"); // "month"（月の表。初期表示）／ "day"（日ごと）
+  // 調整表のロック（誤タップ防止）。最後の状態をこの端末に覚えておく（最初はロック）
+  const [locked, setLockedState] = useState(() => { try { return localStorage.getItem("sama-shift-lock") !== "0"; } catch { return true; } });
+  const setLocked = (v) => { setLockedState(v); try { localStorage.setItem("sama-shift-lock", v ? "1" : "0"); } catch { /* 保存できなくても動く */ } };
   const [sel, setSel] = useState(days[0].k);
   const openDay = (k) => { setSel(k); setView("day"); };
   // 公開とLINEでの通知
@@ -642,7 +707,8 @@ function ApproveView({ data, days, mk }) {
       <EmployeeDaysOff data={data} days={days} mk={mk} />
       <TraineeCount data={data} mk={mk} />
 
-      {/* 調整表の上: 表示の切り替え・募集の告知・印刷 */}
+      <LockCtx.Provider value={locked}>
+      {/* 調整表の上: 表示の切り替え・ロック・募集の告知・印刷 */}
       <div className="flex flex-wrap items-center gap-2 mb-2">
         <div className="flex rounded overflow-hidden text-xs" style={{ border: `1px solid ${LINE}` }}>
           {[["month", "月全体"], ["day", "日単位"]].map(([v, l]) => (
@@ -650,6 +716,11 @@ function ApproveView({ data, days, mk }) {
               style={view === v ? { background: NAVY, color: "#fff" } : { background: "#fff" }}>{l}</button>
           ))}
         </div>
+        <button onClick={() => setLocked(!locked)} title={locked ? "押すと編集できるようになります" : "押すとロックして、誤タップで変わらないようにします"}
+          className="text-xs px-3 py-1.5 rounded"
+          style={locked ? { background: "#F6EBD6", color: "#7A4A00", border: "1px solid #E0B35A" } : { background: "#fff", border: `1px solid ${LINE}` }}>
+          {locked ? "🔒 ロック中（押すと解除）" : "🔓 編集できます（押すとロック）"}
+        </button>
         <span className="ml-auto" />
         {recruitTargets.length > 0 && (
           <div className="flex items-center gap-1">
@@ -692,7 +763,7 @@ function ApproveView({ data, days, mk }) {
                 </span>
                 {closed && !hasReq ? <span className="col-span-3 text-xs opacity-50">休業</span>
                   : PART_KEYS.map((p) => <span key={p}><PartGauge c={cc[p]} rule={rr} part={p} compact /></span>)}
-                {closed ? <span /> : (
+                {closed || (locked && !rec) ? <span /> : locked ? <span><span className="text-xs px-1.5 py-0.5 rounded" style={{ background: RED, color: "#fff" }}>募集中</span></span> : (
                   <span onClick={(e) => { e.stopPropagation(); api.setRecruit(S.id, d.k, !rec); }}>
                     <span className="text-xs px-1.5 py-0.5 rounded cursor-pointer"
                       style={rec ? { background: RED, color: "#fff" } : { border: `1px dashed ${short ? RED : "#B8C2CC"}`, color: short ? RED : "#B8C2CC" }}>
@@ -749,7 +820,7 @@ function ApproveView({ data, days, mk }) {
               {planned.map((s) => <StaffDayRow key={`plan:${s.id}:${day.k}`} data={data} s={s} day={day} r={null} />)}
             </ul>
           )}
-          {rows.some((x) => x.r.status === "pending" && x.r.type !== "off") && (
+          {!locked && rows.some((x) => x.r.status === "pending" && x.r.type !== "off") && (
             <div className="mt-3 flex justify-end">
               <Btn small onClick={() => rows.filter((x) => x.r.status === "pending" && x.r.type !== "off").forEach((x) => api.setStatus(x.r.id, "approved"))}>未定をすべて出勤</Btn>
             </div>
@@ -757,6 +828,7 @@ function ApproveView({ data, days, mk }) {
         </Card>
       </div>
       )}
+      </LockCtx.Provider>
     </div>
   );
 }

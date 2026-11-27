@@ -330,6 +330,13 @@ export const api = {
     if (storeIds.length) check(await supabase.from("staff_stores").insert(storeIds.map((store_id) => ({ staff_id: data.id, store_id }))));
   },
   async updateStaff(id, patch) { check(await supabase.from("staff").update(patch).eq("id", id)); },
+  // 並び順（調整表の行のドラッグ）: ids の順に sort_order = 0,1,2… を振り直す（変わった人だけ更新）
+  async reorderStaff(ids, staff) {
+    const cur = Object.fromEntries(staff.map((s) => [s.id, s.sort_order]));
+    const changed = ids.map((id, i) => [id, i]).filter(([id, i]) => cur[id] !== i);
+    const res = await Promise.all(changed.map(([id, i]) => supabase.from("staff").update({ sort_order: i }).eq("id", id)));
+    res.forEach(check);
+  },
   async deactivateStaff(id) { check(await supabase.from("staff").update({ active: false, profile_id: null }).eq("id", id)); },
   async setRole(profileId, role) { check(await supabase.from("profiles").update({ role }).eq("id", profileId)); },
   // LINE連携の解除（アカウントを削除。名簿と過去のデータは残る）
