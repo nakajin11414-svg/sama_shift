@@ -99,8 +99,12 @@ export default function StaffView({ data, days, profile }) {
     try {
       // 管理者の代理入力は出勤として確定。休み希望は出勤ではないので未定のまま
       const status = type === "off" ? (isManager ? "pending" : undefined) : isManager ? "approved" : undefined;
-      if (type) await api.upsertRequests(me.id, data.store.id, open, type, chosenParts(), hh(start), hh(endFor(end)), status);
-      else await api.deleteRequests(me.id, data.store.id, [...sel]);
+      if (type) {
+        await api.upsertRequests(me.id, data.store.id, open, type, chosenParts(), hh(start), hh(endFor(end)), status);
+        // 募集中の日に出勤の希望を入れたら、管理者にLINEで知らせる（スタッフ本人が入れたときだけ）
+        const rec = open.filter((k) => data.isRecruit(k));
+        if (!isManager && type !== "off" && rec.length) api.notifyManagers({ kind: "recruit_wish", store_id: data.store.id, dates: rec });
+      } else await api.deleteRequests(me.id, data.store.id, [...sel]);
       setSel(new Set());
     } finally { setBusy(false); }
   };

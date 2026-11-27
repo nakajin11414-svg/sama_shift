@@ -5,7 +5,7 @@ LINEログインで使うシフト希望・承認・公開アプリです。
 
 ## 既にv1を動かしている場合（v2への更新）
 
-1. Supabase の **SQL Editor** で `supabase/migrations/0002_stores_prep_announcements_worklogs.sql` を実行する（既存のデータは「本店」という店舗に引き継がれます）。続けて `0003_day_work_hours.sql`、`0004_day_delivery.sql`、`0005_staff_skills.sql`、`0006_staff_position.sql`、`0007_closed_days.sql`、`0008_deadline_change_requests.sql`、`0009_employee_days_off.sql`、`0010_request_desired.sql`、`0011_office_day.sql`、`0012_day_off_wish.sql`、`0013_trainee.sql`、`0014_line_notify.sql`、`0015_announcement_media.sql`、`0016_pay_period.sql` も実行する（実働時間の一括入力・デリバリー担当・できる仕事・役職・定休日・締切と変更依頼・社員の休み日数・枠を変えての出勤・事務日・運営と社員の休み希望・研修中・LINE通知・お知らせの画像と動画・給与期間で実働を管理する機能の追加用）
+1. Supabase の **SQL Editor** で `supabase/migrations/0002_stores_prep_announcements_worklogs.sql` を実行する（既存のデータは「本店」という店舗に引き継がれます）。続けて `0003_day_work_hours.sql`、`0004_day_delivery.sql`、`0005_staff_skills.sql`、`0006_staff_position.sql`、`0007_closed_days.sql`、`0008_deadline_change_requests.sql`、`0009_employee_days_off.sql`、`0010_request_desired.sql`、`0011_office_day.sql`、`0012_day_off_wish.sql`、`0013_trainee.sql`、`0014_line_notify.sql`、`0015_announcement_media.sql`、`0016_pay_period.sql`、`0017_manager_notify.sql` も実行する（実働時間の一括入力・デリバリー担当・できる仕事・役職・定休日・締切と変更依頼・社員の休み日数・枠を変えての出勤・事務日・運営と社員の休み希望・研修中・LINE通知・お知らせの画像と動画・給与期間で実働を管理する・LINE通知を管理者に分けて送る機能の追加用）
 2. GitHub のファイルをこのフォルダの内容で置き換える（`src/` 以下と `package.json`）
 3. Edge Function `unlink-line` を追加する（下の「4. Edge Function」参照。LINE連携の解除に使います）。LINE通知を使う場合は `line-notify` も追加する（下の「LINE通知」参照）
 4. Vercel が自動で再デプロイするのを待つ
@@ -17,7 +17,7 @@ LINEログインで使うシフト希望・承認・公開アプリです。
 
 ### 2. Supabase
 1. **New project**（リージョンは Northeast Asia (Tokyo)）
-2. **SQL Editor** で `supabase/migrations/0001_schema.sql` を実行、続けて `0002_...sql`、`0003_...sql`、`0004_...sql`、`0005_...sql`、`0006_...sql`、`0007_...sql`、`0008_...sql`、`0009_...sql`、`0010_...sql`、`0011_...sql`、`0012_...sql`、`0013_...sql`、`0014_...sql`、`0015_...sql`、`0016_...sql` の順に実行
+2. **SQL Editor** で `supabase/migrations/0001_schema.sql` を実行、続けて `0002_...sql`、`0003_...sql`、`0004_...sql`、`0005_...sql`、`0006_...sql`、`0007_...sql`、`0008_...sql`、`0009_...sql`、`0010_...sql`、`0011_...sql`、`0012_...sql`、`0013_...sql`、`0014_...sql`、`0015_...sql`、`0016_...sql`、`0017_...sql` の順に実行
 3. **Authentication → Providers → Email** が有効であることを確認（メールは送りません。セッション発行に内部で使うだけ）
 4. **Project Settings → API** の Project URL と `anon` キーをメモ
 
@@ -50,7 +50,9 @@ LINEログインで使うシフト希望・承認・公開アプリです。
 
 ## LINE通知
 
-お知らせとシフト公開を、LINE公式アカウント（Messaging API）からスタッフ本人のLINEに送る機能です。使わない場合は設定不要です（0014 のSQLだけは実行してください）。
+お知らせ・シフト公開・募集をスタッフに、変更依頼・募集への希望を管理者に、LINE公式アカウント（Messaging API）から本人のLINEに送る機能です。使わない場合は設定不要です（0014 と 0017 のSQLだけは実行してください）。
+
+**更新するとき:** `supabase/functions/line-notify/index.ts` を変更したら、ダッシュボードの Edge Functions → `line-notify` → Code に貼り直して Deploy してください（Secrets はそのまま）。
 
 ### 1. Messaging API チャネルを作る
 1. [LINE Official Account Manager](https://manager.line.biz/) で公式アカウントを作成する。**LINEログインのチャネルと同じプロバイダー**を選ぶこと（プロバイダーが違うとユーザーIDが一致せず、送れません）
@@ -90,7 +92,7 @@ LINE Developers の **LINEログインチャネル → チャネル基本設定 
 | LINEでログイン→「400 Bad Request」 | LINE のコールバックURLが完全一致しているか |
 | 「LINEのトークン取得に失敗」 | Edge Function の Secrets、Verify JWT がオフか |
 | 自分以外がログインできない | LINE チャネルが「公開済み」か |
-| 読み込みエラー | SQL（0001〜0016）が最後まで実行されているか |
+| 読み込みエラー | SQL（0001〜0017）が最後まで実行されているか |
 | LINE通知で「LINE_MESSAGING_TOKEN が設定されていません」 | `line-notify` の Secrets |
 | LINE通知で全員「通知✕」になる | 公式アカウントがLINEログインのチャネルと同じプロバイダーか、友だち追加されているか |
 | 他の人の操作が自動反映されない | Database → Publications → supabase_realtime で各テーブルをオン |

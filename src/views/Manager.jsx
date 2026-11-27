@@ -557,6 +557,32 @@ function ApproveView({ data, days, mk }) {
     await api.setPublished(data.store.id, mk, on);
     if (on && confirm("公開しました。スタッフにLINEで知らせますか？")) await notifyPublish();
   };
+  // 募集をLINEで知らせる: 今日以降の募集中の日がある店舗ごとに、その店舗のスタッフへ送る
+  const t0 = new Date();
+  const today = `${t0.getFullYear()}-${pad(t0.getMonth() + 1)}-${pad(t0.getDate())}`;
+  const recruitTargets = data.allStores
+    .map((D) => ({ D, ds: days.filter((d) => d.k >= today && D.isRecruit(d.k) && !D.isClosed(d)) }))
+    .filter((x) => x.ds.length);
+  // 送り先の店舗（"" = 募集のあるすべての店舗）
+  const [recruitTo, setRecruitTo] = useState("");
+  const recruitSel = recruitTargets.filter((x) => !recruitTo || x.D.store.id === recruitTo);
+  useEffect(() => { if (recruitTo && !recruitTargets.some((x) => x.D.store.id === recruitTo)) setRecruitTo(""); });
+  const notifyRecruit = async () => {
+    if (!recruitSel.length) return;
+    const list = recruitSel.map(({ D, ds }) => `${D.store.name}: ${ds.map((d) => fmt(d.k)).join("、")}`).join("\n");
+    const who = recruitSel.length === 1 ? `${recruitSel[0].D.store.name}のスタッフ` : "各店舗のスタッフ";
+    if (!confirm(`募集中の日を、${who}にLINEで知らせますか？\n\n${list}`)) return;
+    setNotifying(true);
+    try {
+      const msgs = [];
+      for (const { D, ds } of recruitSel) {
+        const lines = ds.map((d) => `${fmt(d.k)} ${D.shortOf(d).map(([p, n]) => `${PARTS[p].label}あと${n}人`).join("、") || "募集中"}`);
+        const res = await api.lineNotify({ kind: "recruit", store_id: D.store.id, month: mk, lines });
+        msgs.push(`【${D.store.name}】${notifyResult(res)}`);
+      }
+      alert(msgs.join("\n\n"));
+    } catch { /* lineNotify が alert 済み */ } finally { setNotifying(false); }
+  };
   useEffect(() => { if (!days.find((d) => d.k === sel)) setSel(days[0].k); }, [days, sel]);
   const S = data.store;
   const day = days.find((d) => d.k === sel) || days[0];
@@ -590,6 +616,21 @@ function ApproveView({ data, days, mk }) {
               style={view === v ? { background: NAVY, color: "#fff" } : { background: "#fff" }}>{l}</button>
           ))}
         </div>
+        {recruitTargets.length > 0 && (
+          <div className="flex items-center gap-1">
+            {recruitTargets.length > 1 && (
+              <select value={recruitTo} onChange={(e) => setRecruitTo(e.target.value)} title="募集を知らせる店舗"
+                className="border rounded px-1 py-1.5 text-xs bg-white" style={{ borderColor: LINE }}>
+                <option value="">すべての店舗</option>
+                {recruitTargets.map(({ D, ds }) => <option key={D.store.id} value={D.store.id}>{D.store.name}（{ds.length}日）</option>)}
+              </select>
+            )}
+            <Btn disabled={notifying} onClick={notifyRecruit}>
+              <span style={{ color: RED }}>{notifying ? "送信中…"
+                : `${recruitSel.length === 1 && recruitTargets.length > 1 ? `${recruitSel[0].D.store.name}に` : ""}募集をLINEで知らせる（${recruitSel.reduce((a, x) => a + x.ds.length, 0)}日）`}</span>
+            </Btn>
+          </div>
+        )}
         {data.published && <Btn disabled={notifying} onClick={() => confirm(`${S.name} のスタッフに、${mk.replace("-", "年")}月分のシフト公開をLINEで知らせますか？`) && notifyPublish()}>{notifying ? "送信中…" : "LINEで公開を知らせる"}</Btn>}
         <Btn tone={data.published ? "ghost" : "primary"} onClick={togglePublish}>
           {data.published ? "公開を取り下げる" : `${mk.replace("-", "年")}月分を公開する`}
@@ -1157,7 +1198,7 @@ function LineNotifyCard({ data }) {
     <Card className="p-4 w-full text-sm">
       <div className="flex flex-wrap items-center gap-2 mb-2">
         <span className="font-medium">LINE通知</span>
-        <span className="text-xs opacity-60">お知らせとシフト公開を、公式アカウントからスタッフのLINEに送ります。届くのは公式アカウントを友だち追加した人だけです</span>
+        <span className="text-xs opacity-60">お知らせ・シフト公開・募集はスタッフに、変更依頼・募集への希望は管理者に、公式アカウントからLINEで送ります。届くのは公式アカウントを友だち追加した人だけです</span>
       </div>
       <div className="flex flex-wrap items-center gap-2 mb-2">
         <label className="flex items-center gap-1 text-xs">
@@ -1182,6 +1223,19 @@ function LineNotifyCard({ data }) {
         </span>
       </div>
       <div className="text-xs opacity-60 mt-2">リンクをLINEグループに送って、スタッフに友だち追加してもらってください。名簿の「通知○／✕」は最後に確認したときの状態です。</div>
+      {/* 管理者宛ての通知（変更依頼・募集への希望）を受け取る管理者 */}
+      <div className="mt-3 pt-3" style={{ borderTop: "1px solid #EEF1F3" }}>
+        <div className="text-xs mb-1">管理者への通知（変更依頼が届いたとき・募集中の日に希望が入ったとき）を受け取る人</div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          {data.profiles.filter((p) => p.role === "manager").map((p) => (
+            <label key={p.id} className="flex items-center gap-1 text-sm">
+              <input type="checkbox" checked={p.notify_manager !== false} onChange={(e) => api.setManagerNotify(p.id, e.target.checked)} />
+              {data.staff.find((s) => s.profile_id === p.id)?.name || p.display_name}
+            </label>
+          ))}
+        </div>
+        <div className="text-xs opacity-60 mt-1">自分の操作で送られる通知は自分には届きません。公式アカウントを友だち追加していない管理者には届きません。</div>
+      </div>
     </Card>
   );
 }

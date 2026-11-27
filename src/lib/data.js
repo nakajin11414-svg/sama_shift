@@ -73,7 +73,7 @@ export function useShiftData(ym, storeId) {
       supabase.from("requests").select("*").gte("date", first).lte("date", last), // 全店舗分（店舗横断の表示に使う）
       supabase.from("day_settings").select("*").gte("date", first).lte("date", last),
       supabase.from("publications").select("*").eq("month", mk),
-      supabase.from("profiles").select("id, display_name, picture_url, role, announcements_read_at, line_friend, line_friend_checked_at"),
+      supabase.from("profiles").select("id, display_name, picture_url, role, announcements_read_at, line_friend, line_friend_checked_at, notify_manager"),
       supabase.from("announcements").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }).limit(100),
       supabase.from("work_logs").select("*"),
       supabase.from("month_settings").select("*").eq("month", mk),
@@ -289,7 +289,10 @@ export const api = {
       start_time: action === "set" && type === "custom" ? start : null,
       end_time: action === "set" && type === "custom" ? end : null,
     }));
-    check(await supabase.from("change_requests").insert(rows));
+    const { data, error } = await supabase.from("change_requests").insert(rows).select("id");
+    check({ error });
+    // 管理者にLINEで知らせる（失敗しても依頼は送れているので止めない）
+    api.notifyManagers({ kind: "change_request", ids: (data || []).map((x) => x.id) });
   },
   async withdrawChangeRequest(id) { check(await supabase.from("change_requests").delete().eq("id", id)); },
   // 承諾: 希望に反映してから依頼を「承諾」にする
@@ -338,6 +341,14 @@ export const api = {
   },
   // LINE通知（公式アカウントのID と Edge Function line-notify）
   async setLineBotId(v) { check(await supabase.from("settings").update({ line_bot_id: v || null }).eq("id", 1)); },
+  // 管理者宛ての通知（スタッフの操作のついでに送る）。エラーは表示せず、送れなくても操作は続ける
+  async notifyManagers(body) {
+    try {
+      const { error } = await supabase.functions.invoke("line-notify", { body });
+      if (error) console.warn("管理者へのLINE通知に失敗しました", error);
+    } catch (e) { console.warn("管理者へのLINE通知に失敗しました", e); }
+  },
+  async setManagerNotify(profileId, on) { check(await supabase.from("profiles").update({ notify_manager: on }).eq("id", profileId)); },
   async lineNotify(body) {
     const { data, error } = await supabase.functions.invoke("line-notify", { body });
     let msg = error ? error.message : data?.error;
