@@ -611,28 +611,6 @@ function ApproveView({ data, days, mk }) {
           {data.deadline && <button onClick={() => api.setDeadline(S.id, mk, null)} className="underline opacity-60">解除</button>}
         </label>
         <span className="ml-auto" />
-        <div className="flex rounded overflow-hidden text-xs" style={{ border: `1px solid ${LINE}` }}>
-          {[["month", "月全体"], ["day", "日単位"]].map(([v, l]) => (
-            <button key={v} onClick={() => setView(v)} className="px-3 py-1.5"
-              style={view === v ? { background: NAVY, color: "#fff" } : { background: "#fff" }}>{l}</button>
-          ))}
-        </div>
-        {recruitTargets.length > 0 && (
-          <div className="flex items-center gap-1">
-            {recruitTargets.length > 1 && (
-              <select value={recruitTo} onChange={(e) => setRecruitTo(e.target.value)} title="募集を知らせる店舗"
-                className="border rounded px-1 py-1.5 text-xs bg-white" style={{ borderColor: LINE }}>
-                <option value="">すべての店舗</option>
-                {recruitTargets.map(({ D, ds }) => <option key={D.store.id} value={D.store.id}>{D.store.name}（{ds.length}日）</option>)}
-              </select>
-            )}
-            <Btn disabled={notifying} onClick={notifyRecruit}>
-              <span style={{ color: RED }}>{notifying ? "送信中…"
-                : `${recruitSel.length === 1 && recruitTargets.length > 1 ? `${recruitSel[0].D.store.name}に` : ""}募集をLINEで知らせる（${recruitSel.reduce((a, x) => a + x.ds.length, 0)}日）`}</span>
-            </Btn>
-          </div>
-        )}
-        <PrintButton stores={data.allStores} days={days} mk={mk} kind="wish" />
         {data.published && <Btn disabled={notifying} onClick={() => confirm(`${S.name} のスタッフに、${mk.replace("-", "年")}月分のシフト公開をLINEで知らせますか？`) && notifyPublish()}>{notifying ? "送信中…" : "LINEで公開を知らせる"}</Btn>}
         <Btn tone={data.published ? "ghost" : "primary"} onClick={togglePublish}>
           {data.published ? "公開を取り下げる" : `${mk.replace("-", "年")}月分を公開する`}
@@ -663,6 +641,33 @@ function ApproveView({ data, days, mk }) {
 
       <EmployeeDaysOff data={data} days={days} mk={mk} />
       <TraineeCount data={data} mk={mk} />
+
+      {/* 調整表の上: 表示の切り替え・募集の告知・印刷 */}
+      <div className="flex flex-wrap items-center gap-2 mb-2">
+        <div className="flex rounded overflow-hidden text-xs" style={{ border: `1px solid ${LINE}` }}>
+          {[["month", "月全体"], ["day", "日単位"]].map(([v, l]) => (
+            <button key={v} onClick={() => setView(v)} className="px-3 py-1.5"
+              style={view === v ? { background: NAVY, color: "#fff" } : { background: "#fff" }}>{l}</button>
+          ))}
+        </div>
+        <span className="ml-auto" />
+        {recruitTargets.length > 0 && (
+          <div className="flex items-center gap-1">
+            {recruitTargets.length > 1 && (
+              <select value={recruitTo} onChange={(e) => setRecruitTo(e.target.value)} title="募集を知らせる店舗"
+                className="border rounded px-1 py-1.5 text-xs bg-white" style={{ borderColor: LINE }}>
+                <option value="">すべての店舗</option>
+                {recruitTargets.map(({ D, ds }) => <option key={D.store.id} value={D.store.id}>{D.store.name}（{ds.length}日）</option>)}
+              </select>
+            )}
+            <Btn disabled={notifying} onClick={notifyRecruit}>
+              <span style={{ color: RED }}>{notifying ? "送信中…"
+                : `${recruitSel.length === 1 && recruitTargets.length > 1 ? `${recruitSel[0].D.store.name}に` : ""}募集をLINEで知らせる（${recruitSel.reduce((a, x) => a + x.ds.length, 0)}日）`}</span>
+            </Btn>
+          </div>
+        )}
+        <PrintButton stores={data.allStores} days={days} mk={mk} kind="wish" />
+      </div>
 
       {view === "month" ? <MonthGrid data={data} days={days} /> : (
       <div className="flex flex-wrap gap-4 items-start">
