@@ -48,7 +48,7 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
 
   const approved = (sid, k) => { const r = data.requests[sid]?.[k]; return r && r.status === "approved" ? r : null; };
   const staff = data.staffInStore.filter((s) => days.some((d) => approved(s.id, d.k)));
-  const cellW = 60;
+  const cellW = 42; // 日付の列の最小幅（PCで31日分が横に収まるように）
   const byStaff = (s) => days.map((d) => ({ d, r: approved(s.id, d.k) })).filter((x) => x.r);
   const byDate = (k) => data.staffInStore.map((s) => ({ s, r: approved(s.id, k) })).filter((x) => x.r);
 
@@ -65,17 +65,18 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
       <div className="flex flex-wrap gap-4 items-start">
         <Card className="flex-1 min-w-0">
           <DualScroll>
-          <table className="border-collapse" style={{ minWidth: 140 + days.length * cellW }}>
+          {/* 横幅いっぱいに広げ、日付の列は残りを均等に分ける。狭い画面では最小幅で横スクロール */}
+          <table className="border-collapse w-full" style={{ minWidth: 140 + days.length * cellW }}>
             <thead>
               <tr>
-                <th className="sticky left-0 z-10 bg-white text-left px-3 py-2 text-sm font-medium" style={{ minWidth: 140, borderRight: `2px solid ${NAVY}`, borderBottom: `1px solid ${LINE}` }}>名前</th>
+                <th className="sticky left-0 z-10 bg-white text-left px-3 py-2 text-sm font-medium whitespace-nowrap" style={{ width: "1%", minWidth: 140, borderRight: `2px solid ${NAVY}`, borderBottom: `1px solid ${LINE}` }}>名前</th>
                 {days.map((d) => {
                   const hol = data.isHoliday(d), on = focus?.kind === "date" && focus.k === d.k;
                   return (
                     <th key={d.k} onClick={() => setFocus(on ? null : { kind: "date", k: d.k })}
-                      className="cursor-pointer px-1 py-1 text-xs font-normal tabular-nums"
-                      style={{ width: cellW, minWidth: cellW, background: on ? "#E3E9F0" : data.isClosed(d) ? CLOSED_BG : hol ? "#F7F2F2" : "#fff", borderBottom: `1px solid ${LINE}`, color: dayColor(d, hol) }}>
-                      {d.d}<span className="opacity-70">({WD[d.w]})</span>
+                      className="cursor-pointer px-0.5 py-1 text-xs font-normal tabular-nums leading-tight"
+                      style={{ minWidth: cellW, background: on ? "#E3E9F0" : data.isClosed(d) ? CLOSED_BG : hol ? "#F7F2F2" : "#fff", borderBottom: `1px solid ${LINE}`, color: dayColor(d, hol) }}>
+                      {d.d}<span className="block opacity-70">{WD[d.w]}</span>
                     </th>
                   );
                 })}

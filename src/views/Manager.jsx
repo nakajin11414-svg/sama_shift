@@ -10,7 +10,8 @@ export default function ManagerView(props) {
   const changes = props.data.changes.filter((c) => c.status === "pending").length;
   const tabs = [["approve", "シフト管理"], ["changes", `変更依頼${changes ? `（${changes}）` : ""}`], ["worklog", "実働時間"], ["roster", `スタッフ名簿${pending ? `（登録待ち ${pending}）` : ""}`], ["stores", "店舗・基準人数"]];
   return (
-    <div className="p-4 max-w-6xl mx-auto">
+    // シフト管理は月の表を31日分並べるので、PCでは画面の横幅いっぱいに使う
+    <div className={`p-4 mx-auto ${tab === "approve" ? "" : "max-w-6xl"}`}>
       <div className="flex flex-wrap gap-1 mb-4 text-sm">
         {tabs.map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} className="px-3 py-1.5 rounded"
@@ -334,7 +335,7 @@ function MonthGrid({ data, days }) {
   const orderLocked = useContext(OrderLockCtx);
   const [cell, setCell] = useState(null); // { st: 店舗id, sid?: スタッフid, k: 日付 }
   useEffect(() => { setCell(null); }, [data.store?.id, days[0].k]);
-  const cellW = 60;
+  const cellW = 42; // 日付の列の最小幅（PCで31日分が横に収まるように）
   const hl = "#E3E9F0";
   const sections = data.allStores; // [表示中の店舗, ...他店舗]（どれも data と同じ形）
   const multi = sections.length > 1;
@@ -445,17 +446,18 @@ function MonthGrid({ data, days }) {
     <div className={cell ? (cs ? "pb-56" : "pb-[60vh]") : ""}>
       <Card>
         <DualScroll>
-        <table className="border-collapse" style={{ minWidth: 140 + days.length * cellW }}>
+        {/* 横幅いっぱいに広げ、日付の列は残りを均等に分ける。狭い画面では最小幅で横スクロール */}
+        <table className="border-collapse w-full" style={{ minWidth: 140 + days.length * cellW }}>
           <thead>
             <tr>
-              <th className={`${sticky} bg-white text-left py-2 text-sm font-medium`} style={{ minWidth: 140, borderRight: `2px solid ${NAVY}`, borderBottom: `1px solid ${LINE}` }}>名前</th>
+              <th className={`${sticky} bg-white text-left py-2 text-sm font-medium`} style={{ width: "1%", minWidth: 140, borderRight: `2px solid ${NAVY}`, borderBottom: `1px solid ${LINE}` }}>名前</th>
               {days.map((d) => {
                 const hol = data.isHoliday(d), on = cell?.k === d.k;
                 return (
                   <th key={d.k} onClick={() => setCell(colOn(d.k) ? null : { k: d.k })} title={multi ? "この日の全店舗の希望者を見る" : "この日の希望者を見る"}
-                    className="cursor-pointer px-1 py-1 text-xs font-normal tabular-nums"
-                    style={{ width: cellW, minWidth: cellW, background: on ? hl : hol ? "#F7F2F2" : "#fff", borderBottom: `1px solid ${LINE}`, color: dayColor(d, hol) }}>
-                    {d.d}<span className="opacity-70">({WD[d.w]})</span>
+                    className="cursor-pointer px-0.5 py-1 text-xs font-normal tabular-nums leading-tight"
+                    style={{ minWidth: cellW, background: on ? hl : hol ? "#F7F2F2" : "#fff", borderBottom: `1px solid ${LINE}`, color: dayColor(d, hol) }}>
+                    {d.d}<span className="block opacity-70">{WD[d.w]}</span>
                   </th>
                 );
               })}
