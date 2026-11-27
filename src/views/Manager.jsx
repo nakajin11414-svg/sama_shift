@@ -346,12 +346,15 @@ function MonthGrid({ data, days }) {
   const sections = data.allStores; // [表示中の店舗, ...他店舗]（どれも data と同じ形）
   const multi = sections.length > 1;
 
-  // 行の並べ替え（名前の左の ⠿ をドラッグ）。並び順はスタッフ名簿の順（全店舗共通）
+  // 行の並べ替え（名前の左の ⠿ をドラッグ）。並び順は店舗ごと（手稲店で動かしても千歳店の順は変わらない）
   // マウスでもスマホの指でも動くように Pointer Events で実装する
-  const [rowOrder, setRowOrder] = useState(null); // 保存中に先に並びを反映する（ids）
-  useEffect(() => { setRowOrder(null); }, [data.staff]);
-  const rank = rowOrder ? Object.fromEntries(rowOrder.map((id, i) => [id, i])) : null;
-  const sorted = (list) => (rank ? [...list].sort((a, b) => (rank[a.id] ?? 1e9) - (rank[b.id] ?? 1e9)) : list);
+  const [rowOrder, setRowOrder] = useState(null); // 保存中に先に並びを反映する { sec: 店舗id, ids }
+  useEffect(() => { setRowOrder(null); }, [data.staffStores]);
+  const sorted = (list, sec) => {
+    if (rowOrder?.sec !== sec) return list;
+    const rank = Object.fromEntries(rowOrder.ids.map((id, i) => [id, i]));
+    return [...list].sort((a, b) => (rank[a.id] ?? 1e9) - (rank[b.id] ?? 1e9));
+  };
   const drag = useRef(null); // { sec: 店舗id, id: スタッフid }
   const [dragId, setDragId] = useState(null);
   const [over, setOver] = useState(null); // { id, after }
@@ -377,12 +380,14 @@ function MonthGrid({ data, days }) {
     const d = drag.current, o = over;
     endDrag();
     if (!d || !o || o.id === d.id) return;
-    const ids = sorted(data.staff).map((s) => s.id).filter((id) => id !== d.id);
+    const D = sections.find((x) => x.store.id === d.sec);
+    if (!D) return;
+    const ids = sorted(D.staffInStore, d.sec).map((s) => s.id).filter((id) => id !== d.id);
     const at = ids.indexOf(o.id);
     if (at < 0) return;
     ids.splice(o.after ? at + 1 : at, 0, d.id);
-    setRowOrder(ids);
-    try { await api.reorderStaff(ids, data.staff); } catch { setRowOrder(null); }
+    setRowOrder({ sec: d.sec, ids });
+    try { await api.reorderStaff(d.sec, ids, data.staffStores); } catch { setRowOrder(null); }
   };
 
   const mark = (D, s, d) => {
@@ -466,7 +471,7 @@ function MonthGrid({ data, days }) {
           </thead>
           {sections.map((D, si) => {
             const sid = D.store.id;
-            const staff = sorted(D.staffInStore);
+            const staff = sorted(D.staffInStore, sid);
             return (
               <tbody key={sid}>
                 {/* 店舗の見出し行: 日ごとの募集の切り替え（定休日は出さない） */}

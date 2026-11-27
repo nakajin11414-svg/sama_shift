@@ -135,7 +135,11 @@ export function useShiftData(ym, storeId) {
     // 店舗ごとの区分・基準人数・定休日・人数（表示中の店舗と、他店舗の状況の両方で使う）
     const storeView = (st) => {
       const windows = { ...DEFAULT_WINDOWS, ...(st.windows || {}) };
-      const staffInStore = raw.staff.filter((s) => membership[s.id]?.has(st.id));
+      // 店舗ごとの並び順（staff_stores.sort_order。空ならスタッフ名簿の順）
+      const ord = Object.fromEntries(raw.staffStores.filter((m) => m.store_id === st.id).map((m) => [m.staff_id, m.sort_order]));
+      const pos = Object.fromEntries(raw.staff.map((s, i) => [s.id, i]));
+      const staffInStore = raw.staff.filter((s) => membership[s.id]?.has(st.id))
+        .sort((a, b) => (ord[a.id] ?? a.sort_order) - (ord[b.id] ?? b.sort_order) || pos[a.id] - pos[b.id]);
       const requests = {}; // staff_id -> date -> row (この店舗)
       for (const r of raw.requests) if (r.store_id === st.id) (requests[r.staff_id] ||= {})[r.date] = r;
       const daySet = Object.fromEntries(raw.daySettings.filter((d) => d.store_id === st.id).map((d) => [d.date, d]));
@@ -330,11 +334,11 @@ export const api = {
     if (storeIds.length) check(await supabase.from("staff_stores").insert(storeIds.map((store_id) => ({ staff_id: data.id, store_id }))));
   },
   async updateStaff(id, patch) { check(await supabase.from("staff").update(patch).eq("id", id)); },
-  // 並び順（調整表の行のドラッグ）: ids の順に sort_order = 0,1,2… を振り直す（変わった人だけ更新）
-  async reorderStaff(ids, staff) {
-    const cur = Object.fromEntries(staff.map((s) => [s.id, s.sort_order]));
+  // 店舗ごとの並び順（調整表の行のドラッグ）: その店舗の ids の順に sort_order = 0,1,2… を振り直す（変わった人だけ更新）
+  async reorderStaff(storeId, ids, staffStores) {
+    const cur = Object.fromEntries(staffStores.filter((m) => m.store_id === storeId).map((m) => [m.staff_id, m.sort_order]));
     const changed = ids.map((id, i) => [id, i]).filter(([id, i]) => cur[id] !== i);
-    const res = await Promise.all(changed.map(([id, i]) => supabase.from("staff").update({ sort_order: i }).eq("id", id)));
+    const res = await Promise.all(changed.map(([id, i]) => supabase.from("staff_stores").update({ sort_order: i }).eq("staff_id", id).eq("store_id", storeId)));
     res.forEach(check);
   },
   async deactivateStaff(id) { check(await supabase.from("staff").update({ active: false, profile_id: null }).eq("id", id)); },
