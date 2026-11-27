@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePayPeriodData } from "../lib/data.js";
 import { WD, PARTS, PART_KEYS, NAVY, LINE, CLOSED_BG, OFFICE, isPartTime, fmt, skillShort, slotText, slotShort, slotStyle, covers, dayColor, workHours, fmtHours, dkey, payPeriodOfMonth } from "../lib/util.js";
 import { Card, Tag, DualScroll } from "../ui.jsx";
+import { PrintButton } from "./Print.jsx";
 
 export default function PublishedView({ data, days, mk, profile, isManager }) {
   const [preview, setPreview] = useState(false);
@@ -54,8 +55,11 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
   return (
     <div className="p-4">
       {!data.published && <div className="mb-3 text-xs px-3 py-2 rounded" style={{ background: "#F3D27A", color: "#4A3600" }}>未公開のプレビューです。スタッフには表示されません。</div>}
-      <div className="flex flex-wrap items-center gap-2 text-xs opacity-70 mb-2">
-        <span>{S.name}：名前をタップ → その人の出勤日一覧。日付をタップ → その日の出勤者一覧。</span>
+      <div className="flex flex-wrap items-center gap-2 text-xs mb-2">
+        <span className="opacity-70">{S.name}：名前をタップ → その人の出勤日一覧。日付をタップ → その日の出勤者一覧。</span>
+        <span className="ml-auto">
+          <PrintButton small stores={(data.allStores || [data]).filter((D) => isManager ? D.published || D.store.id === S.id : D.published && data.membership?.[myRow?.id]?.has(D.store.id))} days={days} mk={mk} kind="published" />
+        </span>
       </div>
 
       <div className="flex flex-wrap gap-4 items-start">

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, notifyResult, usePayPeriodData } from "../lib/data.js";
 import { WD, PARTS, PART_KEYS, STATUS, CHANGE_STATUS, OFFICE, OFF_WISH, canOffice, isPartTime, TYPE, SKILLS, POSITIONS, skillShort, NAVY, LINE, RED, CLOSED_BG, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, DEFAULT_WINDOWS, slotText, slotShort, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm, hourLabel, payPeriodOfMonth, shiftPayPeriod, periodDays } from "../lib/util.js";
 import { Btn, Card, Tag, Gauge, DualScroll } from "../ui.jsx";
+import { PrintButton } from "./Print.jsx";
 
 export default function ManagerView(props) {
   const [tab, setTab] = useState("approve");
@@ -631,6 +632,7 @@ function ApproveView({ data, days, mk }) {
             </Btn>
           </div>
         )}
+        <PrintButton stores={data.allStores} days={days} mk={mk} kind="wish" />
         {data.published && <Btn disabled={notifying} onClick={() => confirm(`${S.name} のスタッフに、${mk.replace("-", "年")}月分のシフト公開をLINEで知らせますか？`) && notifyPublish()}>{notifying ? "送信中…" : "LINEで公開を知らせる"}</Btn>}
         <Btn tone={data.published ? "ghost" : "primary"} onClick={togglePublish}>
           {data.published ? "公開を取り下げる" : `${mk.replace("-", "年")}月分を公開する`}

@@ -12,4 +12,13 @@ body { margin: 0; font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-
 .manual table { border-collapse: collapse; width: 100%; margin: .6rem 0 1rem; font-size: .85rem; display: block; overflow-x: auto; }
 .manual th, .manual td { border: 1px solid #D5DCE2; padding: .35rem .6rem; text-align: left; vertical-align: top; }
 .manual th { background: #EEF1F3; font-weight: 600; white-space: nowrap; }
+/* 印刷（views/Print.jsx）: 印刷用の表だけを出す */
+.print-area { display: none; }
+@media print {
+  @page { size: A4 landscape; margin: 8mm; }
+  body > *:not(.print-area) { display: none !important; }
+  .print-area { display: block; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print-page { break-after: page; }
+  .print-page:last-child { break-after: auto; }
+}
 .manual code { background: #EEF1F3; padding: 0 .3rem; border-radius: 3px; font-size: .85em; }
