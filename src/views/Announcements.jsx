@@ -33,7 +33,8 @@ export default function AnnouncementsView({ data, profile, isManager }) {
   // form: {id?, title, body, store_id, pinned, notify, attachments, added: 今回アップロードしたpath, removed: 保存済みから外したpath}
   const [form, setForm] = useState(null);
   const [uploading, setUploading] = useState(0);
-  const list = data.announcements.filter((a) => !a.store_id || !data.store || a.store_id === data.store.id);
+  // 管理者はすべての店舗宛てを表示、スタッフは全店舗宛てと自分の店舗宛てだけ
+  const list = isManager ? data.announcements : data.announcements.filter((a) => !a.store_id || !data.store || a.store_id === data.store.id);
   const readAt = profile.announcements_read_at;
 
   // 開いたら既読にする
@@ -57,6 +58,7 @@ export default function AnnouncementsView({ data, profile, isManager }) {
 
   const [sending, setSending] = useState(null); // 送信中のお知らせのid
   const storeName = (id) => (id ? data.stores.find((s) => s.id === id)?.name : "全店舗");
+  const toWhom = (id) => (id ? `${storeName(id)}のスタッフ` : "全店舗のスタッフ");
   const notify = async (id) => {
     setSending(id);
     try {
@@ -97,13 +99,13 @@ export default function AnnouncementsView({ data, profile, isManager }) {
       return;
     }
     const created = await api.postAnnouncement({ ...row, created_by: profile.id });
-    const send = form.notify;
+    const send = form.notify && confirm(`${toWhom(row.store_id)}にLINEで送ります。よろしいですか？\n（キャンセルしても投稿はされます）`);
     setForm(null);
     if (send && created) await notify(created.id);
   };
   const open = (a) => setForm(a
     ? { id: a.id, title: a.title, body: a.body, store_id: a.store_id || "", pinned: a.pinned, attachments: a.attachments || [], added: [], removed: [] }
-    : { title: "", body: "", store_id: data.store?.id || "", pinned: false, notify: true, attachments: [], added: [], removed: [] });
+    : { title: "", body: "", store_id: "", pinned: false, notify: true, attachments: [], added: [], removed: [] });
 
   return (
     <div className="p-4 max-w-3xl mx-auto">
@@ -122,12 +124,14 @@ export default function AnnouncementsView({ data, profile, isManager }) {
             <Media items={form.attachments} urls={urls} onRemove={removeFile} />
           </div>
           <div className="flex flex-wrap items-center gap-3 mb-3">
-            <label className="flex items-center gap-1">宛先
-              <select value={form.store_id} onChange={(e) => setForm({ ...form, store_id: e.target.value })} className="border rounded px-1 py-1">
-                <option value="">全店舗</option>
-                {data.stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </label>
+            <div className="flex items-center gap-2">宛先
+              <div className="flex rounded overflow-hidden text-xs" style={{ border: `1px solid ${LINE}` }}>
+                {[["", "全店舗"], ...data.stores.map((s) => [s.id, `${s.name}の人`])].map(([v, l]) => (
+                  <button key={v || "all"} type="button" onClick={() => setForm({ ...form, store_id: v })} className="px-3 py-1.5"
+                    style={form.store_id === v ? { background: NAVY, color: "#fff" } : { background: "#fff" }}>{l}</button>
+                ))}
+              </div>
+            </div>
             <label className="flex items-center gap-1"><input type="checkbox" checked={form.pinned} onChange={(e) => setForm({ ...form, pinned: e.target.checked })} />上に固定</label>
             {!form.id && <label className="flex items-center gap-1"><input type="checkbox" checked={form.notify} onChange={(e) => setForm({ ...form, notify: e.target.checked })} />LINEで通知する</label>}
             <span className="ml-auto flex gap-2"><Btn small onClick={cancel}>キャンセル</Btn><Btn small tone="primary" disabled={uploading > 0} onClick={save}>{form.id ? "更新" : "投稿"}</Btn></span>
@@ -151,7 +155,7 @@ export default function AnnouncementsView({ data, profile, isManager }) {
                   <div className="flex flex-wrap items-center gap-2 justify-end mt-2">
                     {a.notified_at && <span className="text-xs opacity-60 mr-auto">LINE送信済み（{new Date(a.notified_at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}）</span>}
                     <Btn small disabled={sending === a.id}
-                      onClick={() => confirm(a.notified_at ? "このお知らせをもう一度LINEで送りますか？" : "このお知らせをLINEで送りますか？") && notify(a.id)}>
+                      onClick={() => confirm(`このお知らせを${a.notified_at ? "もう一度" : ""}${toWhom(a.store_id)}にLINEで送りますか？`) && notify(a.id)}>
                       {sending === a.id ? "送信中…" : a.notified_at ? "LINEで再送" : "LINEで送る"}
                     </Btn>
                     <Btn small onClick={() => open(a)}>編集</Btn>
