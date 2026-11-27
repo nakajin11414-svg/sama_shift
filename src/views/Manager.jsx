@@ -399,14 +399,14 @@ function MonthGrid({ data, days }) {
     const sh = D.sharedOf(s.id, d.k);
     if (sh) {
       const from = D.storeName(sh.store_id);
-      const ini = <span className="opacity-70" style={{ fontSize: 10 }}>{from.slice(0, 1)}</span>;
-      if (sh.type === "off") return <span className="inline-block text-xs px-0.5 rounded whitespace-nowrap tracking-tighter leading-tight" style={{ background: OFF_WISH.bg, color: OFF_WISH.fg, opacity: 0.6 }} title={`休み希望（${from}）`}>{ini}{OFF_WISH.short}</span>;
-      if (sh.status === "approved") return <span className="inline-block text-xs px-0.5 rounded whitespace-nowrap tracking-tighter leading-tight" style={{ background: "#E4E7EA", color: "#5A6B7A" }} title={`${from}で出勤 ${slotText(sh)}`}>{ini}{slotShort(sh)}</span>;
+      const ini = <span className="opacity-70" style={{ fontSize: 11 }}>{from.slice(0, 1)}</span>;
+      if (sh.type === "off") return <span className="inline-block text-xs px-1 py-0.5 rounded whitespace-nowrap leading-tight" style={{ background: OFF_WISH.bg, color: OFF_WISH.fg, opacity: 0.6 }} title={`休み希望（${from}）`}>{ini}{OFF_WISH.short}</span>;
+      if (sh.status === "approved") return <span className="inline-block text-xs px-1 py-0.5 rounded whitespace-nowrap leading-tight" style={{ background: "#E4E7EA", color: "#5A6B7A" }} title={`${from}で出勤 ${slotText(sh)}`}>{ini}{slotShort(sh)}</span>;
       if (sh.status === "rejected") return <span className="text-xs" style={{ color: STATUS.rejected.fg, opacity: 0.6 }} title={`${from}で休み（希望: ${slotText(sh)}）`}>{ini}✕</span>;
       const st = slotStyle(sh);
-      return <span className="inline-block text-xs px-0.5 rounded whitespace-nowrap tracking-tighter leading-tight" style={{ border: `1px dotted ${st.fg}`, color: st.fg }} title={`${from}に希望・未定（${slotText(sh)}）。タップして${D.store.name}で出勤にできます`}>{ini}{slotShort(sh)}</span>;
+      return <span className="inline-block text-xs px-1 py-0.5 rounded whitespace-nowrap leading-tight" style={{ border: `1px dotted ${st.fg}`, color: st.fg }} title={`${from}に希望・未定（${slotText(sh)}）。タップして${D.store.name}で出勤にできます`}>{ini}{slotShort(sh)}</span>;
     }
-    if (!D.isClosed(d) && canOffice(s)) return <span className="inline-block text-xs px-0.5 rounded whitespace-nowrap tracking-tighter leading-tight" style={{ border: "1px dashed #B8C2CC", color: "#5A6B7A" }} title="出勤予定（枠は未定）">予</span>;
+    if (!D.isClosed(d) && canOffice(s)) return <span className="inline-block text-xs px-1 py-0.5 rounded whitespace-nowrap leading-tight" style={{ border: "1px dashed #B8C2CC", color: "#5A6B7A" }} title="出勤予定（枠は未定）">予</span>;
     return null;
   };
 
@@ -421,7 +421,7 @@ function MonthGrid({ data, days }) {
     return (
       <button onClick={(e) => { e.stopPropagation(); api.setRecruit(D.store.id, d.k, !rec); }}
         title={rec ? `${D.store.name}: 募集中（押すと取り下げ）` : `${D.store.name}: 押すと募集する${short ? "（人が足りません）" : ""}`}
-        className={`text-xs rounded whitespace-nowrap ${small ? "px-0.5 tracking-tighter" : "px-1.5 py-0.5"}`}
+        className={`text-xs rounded whitespace-nowrap ${small ? "px-1" : "px-1.5 py-0.5"}`}
         style={rec ? { background: RED, color: "#fff" } : { border: `1px dashed ${short ? RED : "#B8C2CC"}`, color: short ? RED : "#B8C2CC" }}>
         {rec ? "募集中" : "募集"}
       </button>

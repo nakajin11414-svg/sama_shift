@@ -34,7 +34,7 @@ export const DualScroll = ({ children, className = "" }) => {
 
 // tight: 月の表の細い列用（余白を詰めて、折り返さない）
 export const Tag = ({ s, children, title, style, tight }) => (
-  <span title={title} className={`inline-block rounded text-xs leading-tight ${tight ? "px-0.5 whitespace-nowrap tracking-tighter" : "px-1.5 py-0.5"}`}
+  <span title={title} className={`inline-block rounded text-xs leading-tight ${tight ? "px-1 py-0.5 whitespace-nowrap" : "px-1.5 py-0.5"}`}
     style={{ background: s.bg, color: s.fg, ...style }}>{children}</span>
 );
 
@@ -58,10 +58,10 @@ export const Card = ({ children, className = "", style, ...rest }) => (
 export const Gauge = ({ n, p = 0, need, tight, warn }) => {
   const tone = n > need ? { bg: "#F7C6C6", fg: "#7A1E1E" } : n < need ? { bg: "#FBE7B2", fg: "#5C4300" } : { bg: "#CFE8D8", fg: "#0F3A24" };
   if (tight) return (
-    <span className="inline-block tabular-nums text-xs leading-tight px-1 rounded whitespace-nowrap text-center"
+    <span className="inline-block tabular-nums text-xs leading-tight px-1.5 py-0.5 rounded whitespace-nowrap text-center"
       style={{ background: tone.bg, color: tone.fg, boxShadow: warn ? `inset 0 0 0 1.5px ${RED}` : undefined }}>
       {n}<span className="opacity-60">/{need}</span>
-      {p > 0 && <span className="block opacity-70" style={{ fontSize: 10 }}>+{p}</span>}
+      {p > 0 && <span className="block opacity-70" style={{ fontSize: 11 }}>+{p}</span>}
     </span>
   );
   return (
