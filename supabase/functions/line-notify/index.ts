@@ -34,9 +34,19 @@ const fmtDate = (k: string) => {
   return `${m}/${d}(${WD[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]})`;
 };
 const PART_LABEL: Record<string, string> = { prep: "仕込み", lunch: "ランチ", dinner: "ディナー" };
+// 事務: "office_lunch" / "office_dinner" が事務の時間帯、"prep" / "lunch" / "dinner" が一緒に出勤する枠
+// （"office_*" が無い古いデータは lunch / dinner を事務の時間帯として読む）
+const officeText = (p: string[]) => {
+  const mark = p.some((x) => x.startsWith("office_"));
+  const t = ["lunch", "dinner"].filter((x) => p.includes(mark ? `office_${x}` : x));
+  const span = t.length === 2 ? "（通し）" : t[0] === "lunch" ? "（ランチ）" : t[0] === "dinner" ? "（ディナー）" : "";
+  const w = mark ? ["prep", "lunch", "dinner"].filter((x) => p.includes(x)) : [];
+  return "事務" + span + (w.length ? "＋" + w.map((x) => PART_LABEL[x]).join("＋").replace("ランチ＋ディナー", "通し") : "");
+};
 // deno-lint-ignore no-explicit-any
 const slotText = (r: any) =>
-  r.type === "off" ? "休み希望" : r.type === "office" ? "事務"
+  r.type === "off" ? "休み希望"
+  : r.type === "office" ? officeText(r.parts ?? [])
   : r.type === "custom" ? `${String(r.start_time ?? "").slice(0, 5)}〜${String(r.end_time ?? "").slice(0, 5)}`
   : ["prep", "lunch", "dinner"].filter((p) => (r.parts ?? []).includes(p)).map((p) => PART_LABEL[p]).join("＋").replace("ランチ＋ディナー", "通し") || "？";
 // 日本時間の今日 "YYYY-MM-DD"

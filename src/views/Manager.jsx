@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api, notifyResult, usePayPeriodData } from "../lib/data.js";
-import { WD, PARTS, PART_KEYS, STATUS, CHANGE_STATUS, OFFICE, OFF_WISH, canOffice, isPartTime, TYPE, SKILLS, POSITIONS, skillShort, NAVY, LINE, RED, CLOSED_BG, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, DEFAULT_WINDOWS, slotText, slotShort, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm, hourLabel, payPeriodOfMonth, shiftPayPeriod, periodDays } from "../lib/util.js";
+import { WD, PARTS, PART_KEYS, STATUS, CHANGE_STATUS, OFFICE, OFFICE_SPANS, officeSpan, officeParts, officeWorkParts, OFF_WISH, canOffice, isPartTime, TYPE, SKILLS, POSITIONS, skillShort, NAVY, LINE, RED, CLOSED_BG, fmt, pad, holidayName, skillShortage, DEFAULT_RULE, DEFAULT_WINDOWS, slotText, slotShort, slotStyle, dayColor, defaultDayHours, autoWork, BREAK_END, workHours, fmtHours, hhmm, hourLabel, payPeriodOfMonth, shiftPayPeriod, periodDays } from "../lib/util.js";
 import { Btn, Card, Tag, Gauge, DualScroll } from "../ui.jsx";
 import { PrintButton } from "./Print.jsx";
 
@@ -192,7 +192,7 @@ function SlotEditor({ r, windows, office, onSave, onDone }) {
   const officeWish = !office && orig.type === "office"; // （念のため）事務の希望なら事務だけ
   // mode: "parts"（枠を選ぶ）／ "custom"（時間指定）／ "office"（事務。運営・社員のみ）
   const [mode, setMode] = useState(base.type === "office" || officeWish ? "office" : base.type === "custom" || !allowed.length ? "custom" : "parts");
-  const [parts, setParts] = useState(() => new Set(base.type === "custom" ? [] : (base.parts || []).filter((p) => allowed.includes(p))));
+  const [parts, setParts] = useState(() => new Set(base.type !== "parts" ? [] : (base.parts || []).filter((p) => allowed.includes(p))));
   const togglePart = (p) => { setMode("parts"); setParts((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; }); };
   const points = (seg) => {
     const out = new Set([seg[0], seg[1]]);
@@ -204,6 +204,12 @@ function SlotEditor({ r, windows, office, onSave, onDone }) {
   const [start, setStart] = useState(initStart);
   const [end, setEnd] = useState(base.type === "custom" ? toMin(hhmm(base.end_time)) : segOf(initStart)[1]);
   const [busy, setBusy] = useState(false);
+  // 事務の時間帯（通し・ランチ・ディナー）
+  const [span, setSpan] = useState(() => (base.type === "office" && officeSpan(base)?.key) || "full");
+  // 事務の日に同じ店舗で一緒に出勤する枠（例: ランチは事務、ディナーは出勤）。事務の時間帯と重なる枠は選べない
+  const [work, setWork] = useState(() => new Set(base.type === "office" ? officeWorkParts(base) : []));
+  const workChoices = PART_KEYS.filter((p) => !(OFFICE_SPANS.find((x) => x.key === span)?.office || []).includes(p));
+  const toggleWork = (p) => setWork((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; });
   const startOpts = segments.flatMap((seg) => points(seg).filter((m) => m < seg[1]));
   const endOpts = points(segOf(start)).filter((m) => m > start);
   const changeStart = (m) => { setStart(m); if (end <= m || end > segOf(m)[1]) setEnd(segOf(m)[1]); };
@@ -211,7 +217,7 @@ function SlotEditor({ r, windows, office, onSave, onDone }) {
   const save = async () => {
     if (mode === "parts" && !parts.size) return alert("枠を1つ以上選んでください");
     const slot = mode === "parts" ? { type: "parts", parts: PART_KEYS.filter((p) => parts.has(p)), start_time: null, end_time: null }
-      : mode === "office" ? { type: "office", parts: [], start_time: null, end_time: null }
+      : mode === "office" ? { type: "office", parts: officeParts(span, [...work].filter((p) => workChoices.includes(p))), start_time: null, end_time: null }
       : { type: "custom", parts: [], start_time: fromMin(start), end_time: fromMin(end) };
     setBusy(true);
     try { await (onSave ? onSave(slot) : api.approveAs(r, slot)); onDone(); } finally { setBusy(false); }
@@ -226,6 +232,22 @@ function SlotEditor({ r, windows, office, onSave, onDone }) {
       ))}
       {!officeWish && <button onClick={() => setMode("custom")} className="px-2.5 py-1 rounded" style={chip(mode === "custom")}>時間指定</button>}
       {(office || officeWish) && <button onClick={() => setMode("office")} className="px-2.5 py-1 rounded" style={chip(mode === "office", OFFICE)}>{OFFICE.label}</button>}
+      {mode === "office" && (
+        <span className="flex items-center gap-1">
+          <span className="opacity-60">→</span>
+          {OFFICE_SPANS.map((x) => (
+            <button key={x.key} onClick={() => setSpan(x.key)} className="px-2 py-1 rounded" style={chip(span === x.key, OFFICE)}>{x.label}</button>
+          ))}
+          {office && workChoices.length > 0 && (
+            <>
+              <span className="opacity-60 ml-2">＋この店舗で出勤</span>
+              {workChoices.map((p) => (
+                <button key={p} onClick={() => toggleWork(p)} className="px-2 py-1 rounded" style={chip(work.has(p), PARTS[p])}>{PARTS[p].label}</button>
+              ))}
+            </>
+          )}
+        </span>
+      )}
       {mode === "parts" && parts.size > 1 && <span className="opacity-60">→ {slotText({ type: "parts", parts: [...parts] })}</span>}
       {mode === "custom" && (
         <span className="flex items-center gap-1">
@@ -238,7 +260,7 @@ function SlotEditor({ r, windows, office, onSave, onDone }) {
         <Btn small onClick={onDone}>やめる</Btn>
       </span>
       <div className="w-full opacity-60">
-        {office ? "運営・社員は希望に関係なくすべての枠を選べます。「事務」は出勤日に数えますが、各枠の人数には数えません"
+        {office ? "運営・社員は希望に関係なくすべての枠を選べます。「事務」は通し・ランチ・ディナーを選べ、残りの時間に同じ店舗で出勤する枠も付けられます。事務の部分は各枠の人数に数えません"
           : `希望（${slotText(orig)}）の範囲内で選べます`}
       </div>
     </div>

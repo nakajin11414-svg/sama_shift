@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePayPeriodData } from "../lib/data.js";
-import { WD, PARTS, PART_KEYS, NAVY, LINE, CLOSED_BG, OFFICE, isPartTime, fmt, skillShort, slotText, slotShort, slotStyle, covers, dayColor, workHours, fmtHours, dkey, payPeriodOfMonth } from "../lib/util.js";
+import { WD, PARTS, PART_KEYS, NAVY, LINE, CLOSED_BG, OFFICE, officeSpan, isPartTime, fmt, skillShort, slotText, slotShort, slotStyle, covers, dayColor, workHours, fmtHours, dkey, payPeriodOfMonth } from "../lib/util.js";
 import { Card, Tag, DualScroll } from "../ui.jsx";
 import { PrintButton } from "./Print.jsx";
 
@@ -145,7 +145,7 @@ export default function PublishedView({ data, days, mk, profile, isManager }) {
                   return office.length > 0 && (
                     <div className="mb-3">
                       <div className="flex items-center gap-2 mb-1"><Tag s={OFFICE}>{OFFICE.label}</Tag><span className="text-xs tabular-nums opacity-70">{office.length}人</span></div>
-                      <ul className="pl-1">{office.map(({ s }) => <li key={s.id} className="py-0.5">{s.name}</li>)}</ul>
+                      <ul className="pl-1">{office.map(({ s, r }) => <li key={s.id} className="py-0.5">{s.name}{officeSpan(r) && <span className="text-xs opacity-60">（{officeSpan(r).label}）</span>}</li>)}</ul>
                     </div>
                   );
                 })()}

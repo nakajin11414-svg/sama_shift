@@ -132,7 +132,8 @@ const overlaps = (s, e, [a, b]) => Math.min(e, b) - Math.max(s, a) > 0;
 
 // 希望がどの枠に入るか
 export function partsOf(req, windows = DEFAULT_WINDOWS) {
-  if (!req) return [];
+  if (!req || req.type === "off") return []; // 休み希望は枠の人数に数えない
+  if (req.type === "office") return officeWorkParts(req); // 事務の部分は数えず、一緒に出勤する枠だけ数える
   if (req.type === "custom") {
     const s = toHour(req.start_time), e = toHour(req.end_time);
     return PART_KEYS.filter((p) => overlaps(s, e, windows[p] || DEFAULT_WINDOWS[p]));
@@ -143,10 +144,43 @@ export const covers = (req, part, windows) => partsOf(req, windows).includes(par
 
 // 表示用
 const ordered = (r) => PART_KEYS.filter((p) => (r.parts || []).includes(p));
+// 事務（type "office"）の parts:
+//   "office_lunch" / "office_dinner" … 事務をする時間帯
+//   "prep" / "lunch" / "dinner"        … 同じ日に同じ店舗で出勤する枠（例: ランチは事務、ディナーは出勤）
+//   ※ "office_*" が無い古いデータは、lunch / dinner を事務の時間帯として読む
+export const OFFICE_SPANS = [
+  { key: "full", label: "通し", short: "通", office: ["lunch", "dinner"] },
+  { key: "lunch", label: "ランチ", short: "ラ", office: ["lunch"] },
+  { key: "dinner", label: "ディナー", short: "デ", office: ["dinner"] },
+];
+const hasOfficeMark = (r) => (r?.parts || []).some((p) => p.startsWith("office_"));
+const officeTimes = (r) => {
+  const ps = r?.parts || [];
+  return hasOfficeMark(r) ? ["lunch", "dinner"].filter((p) => ps.includes(`office_${p}`)) : ["lunch", "dinner"].filter((p) => ps.includes(p));
+};
+export const officeWorkParts = (r) => (hasOfficeMark(r) ? PART_KEYS.filter((p) => (r.parts || []).includes(p)) : []);
+export const officeSpan = (r) => {
+  const t = officeTimes(r);
+  const l = t.includes("lunch"), d = t.includes("dinner");
+  return OFFICE_SPANS.find((x) => x.key === (l && d ? "full" : l ? "lunch" : d ? "dinner" : "")) || null;
+};
+// 保存する parts を作る
+export const officeParts = (spanKey, work = []) => [
+  ...(OFFICE_SPANS.find((x) => x.key === spanKey)?.office || []).map((p) => `office_${p}`),
+  ...PART_KEYS.filter((p) => work.includes(p)),
+];
+const officeText = (r) => {
+  const sp = officeSpan(r), w = officeWorkParts(r);
+  return OFFICE.label + (sp ? `（${sp.label}）` : "") + (w.length ? "＋" + w.map((p) => PARTS[p].label).join("＋").replace("ランチ＋ディナー", "通し") : "");
+};
+const officeShort = (r) => {
+  const w = officeWorkParts(r);
+  return OFFICE.short + (officeSpan(r)?.short || "") + (w.length ? "+" + w.map((p) => PARTS[p].short).join("").replace("ラデ", "通") : "");
+};
 export const slotText = (r) =>
-  r.type === "off" ? OFF_WISH.label : r.type === "office" ? OFFICE.label : r.type === "custom" ? `${hhmm(r.start_time)}〜${hhmm(r.end_time)}` : ordered(r).map((p) => PARTS[p].label).join("＋").replace("ランチ＋ディナー", "通し") || "？";
+  r.type === "off" ? OFF_WISH.label : r.type === "office" ? officeText(r) : r.type === "custom" ? `${hhmm(r.start_time)}〜${hhmm(r.end_time)}` : ordered(r).map((p) => PARTS[p].label).join("＋").replace("ランチ＋ディナー", "通し") || "？";
 export const slotShort = (r) =>
-  r.type === "off" ? OFF_WISH.short : r.type === "office" ? OFFICE.short : r.type === "custom" ? `${hhmm(r.start_time).slice(0, 2)}-${hhmm(r.end_time).slice(0, 2)}` : ordered(r).map((p) => PARTS[p].short).join("").replace("ラデ", "通") || "？";
+  r.type === "off" ? OFF_WISH.short : r.type === "office" ? officeShort(r) : r.type === "custom" ? `${hhmm(r.start_time).slice(0, 2)}-${hhmm(r.end_time).slice(0, 2)}` : ordered(r).map((p) => PARTS[p].short).join("").replace("ラデ", "通") || "？";
 export const slotStyle = (r) => {
   if (r.type === "off") return OFF_WISH;
   if (r.type === "office") return OFFICE;

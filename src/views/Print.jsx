@@ -66,7 +66,7 @@ function PrintSheet({ D, days, mk, kind }) {
         {!wish && !D.published && <span style={{ fontSize: 10 }}>（未公開）</span>}
         <span style={{ marginLeft: "auto", fontSize: 9 }}>
           {wish && "○ 出勤　× 休み　印なし 未定　(他) = 他店の希望　"}
-          仕=仕込み ラ=ランチ デ=ディナー 通=通し 事=事務 休=休み希望　印刷 {now.getMonth() + 1}/{now.getDate()}
+          仕=仕込み ラ=ランチ デ=ディナー 通=通し 事通・事ラ・事デ=事務（通し・ランチ・ディナー） 事ラ+デ=ランチ事務＋ディナー出勤 休=休み希望　印刷 {now.getMonth() + 1}/{now.getDate()}
         </span>
       </div>
       <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed", fontSize: 9 }}>
